@@ -1,0 +1,95 @@
+# SmartIntern-ET Amharic Translations (am).
+# Copyright (C) 2026 SmartIntern-ET Team
+# This file is distributed under the same license as the SmartIntern-ET package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: SmartIntern-ET 1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-24 09:00+0300\n"
+"PO-Revision-Date: 2026-09-24 09:00+0300\n"
+"Last-Translator: SmartIntern-ET Localization <i18n@smartintern.et>\n"
+"Language-Team: Amharic <am@li.org>\n"
+"Language: am\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+msgid "Invalid credentials"
+msgstr "ልክ ያልሆነ መለያ መረጃ"
+
+msgid "Letter expired"
+msgstr "ደብዳቤው ጊዜው አልፎበታል"
+
+msgid "Application submitted"
+msgstr "ማመልከቻው ገብቷል"
+
+msgid "Application submitted successfully"
+msgstr "ማመልከቻው በተሳካ ሁኔታ ገብቷል"
+
+msgid "Evaluation sealed"
+msgstr "ግምገማው ታሽጓል"
+
+msgid "Permission denied"
+msgstr "ፈቃድ ተከልክሏል"
+
+msgid "Please verify your email before logging in."
+msgstr "እባክዎ ከመግባትዎ በፊት ኢሜይልዎን ያረጋግጡ።"
+
+msgid "Invalid email or password."
+msgstr "ልክ ያልሆነ ኢሜይል ወይም የይለፍ ቃል።"
+
+msgid "User registered successfully."
+msgstr "ተጠቃሚው በተሳካ ሁኔታ ተመዝግቧል።"
+
+msgid "Passwords do not match."
+msgstr "የይለፍ ቃሎች አይዛመዱም።"
+
+msgid "A user with this email address already exists."
+msgstr "በዚህ ኢሜይል አድራሻ የተመዘገበ ተጠቃሚ አስቀድሞ አለ።"
+
+msgid "Phone number must be a valid Ethiopian phone number (e.g., +251912345678 or 0912345678)."
+msgstr "ስልክ ቁጥር ትክክለኛ የኢትዮጵያ ስልክ ቁጥር መሆን አለበት (ለምሳሌ +251912345678 ወይም 0912345678)።"
+
+msgid "A student profile with this student ID number already exists for the specified university."
+msgstr "በዚህ የተማሪ መለያ ቁጥር ለተጠቀሰው ዩኒቨርሲቲ የተመዘገበ ተማሪ አስቀድሞ አለ።"
+
+msgid "Password reset link sent to your email."
+msgstr "የይለፍ ቃል ማስተካከያ አገናኝ ወደ ኢሜይልዎ ተልኳል።"
+
+msgid "Password has been reset successfully."
+msgstr "የይለፍ ቃልዎ በተሳካ ሁኔታ ተቀይሯል።"
+
+msgid "Student profile created successfully."
+msgstr "የተማሪ መገለጫ በተሳካ ሁኔታ ተፈጥሯል።"
+
+msgid "Emergency contact saved successfully."
+msgstr "የአደጋ ጊዜ ተጠሪ መረጃ በተሳካ ሁኔታ ተቀምጧል።"
+
+msgid "Accessibility profile saved successfully."
+msgstr "የተደራሽነት መገለጫ መረጃ በተሳካ ሁኔታ ተቀምጧል።"
+
+msgid "Clearance approved"
+msgstr "ክሊራንሱ ጸድቋል"
+
+msgid "Clearance rejected"
+msgstr "ክሊራንሱ ተቀባይነት አላገኘም"
+
+msgid "Logbook entry approved"
+msgstr "የስራ መዝገቡ ጸድቋል"
+
+msgid "Logbook entry rejected"
+msgstr "የስራ መዝገቡ ተቀባይነት አላገኘም"
+
+msgid "Cohort created successfully"
+msgstr "የስልጠና ቡድን በተሳካ ሁኔታ ተፈጥሯል"
+
+msgid "Team formulated successfully"
+msgstr "ቡድን በተሳካ ሁኔታ ተዋቅሯል"
+
+msgid "SRS document uploaded successfully"
+msgstr "የ SRS ሰነድ በተሳካ ሁኔታ ተሰቅሏል"
+
+msgid "An error occurred, please try again."
+msgstr "ስህተት ተከስቷል፣ እባክዎ እንደገና ይሞክሩ።"

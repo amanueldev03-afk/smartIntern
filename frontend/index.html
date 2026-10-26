@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Internship Platform | Intelligent Career Matching</title>
+    <meta name="description" content="AI-Powered internship discovery and matching platform for students and recruiters." />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: {
+                50: '#F5F3FF',
+                100: '#EDE9FE',
+                200: '#DDD6FE',
+                300: '#C4B5FD',
+                400: '#A78BFA',
+                500: '#8B5CF6',
+                600: '#7C3AED',
+                700: '#6D28D9',
+                800: '#5B21B6',
+                900: '#4C1D95',
+              },
+              secondary: {
+                50: '#F0FDFA',
+                100: '#CCFBF1',
+                200: '#99F6E4',
+                300: '#5EEAD4',
+                400: '#2DD4BF',
+                500: '#14B8A6',
+                600: '#0D9488',
+                700: '#0F766E',
+                800: '#115E59',
+                900: '#134E4A',
+              },
+              accent: {
+                50: '#FFF1F2',
+                100: '#FFE4E6',
+                200: '#FECDD3',
+                300: '#FDA4AF',
+                400: '#FB7185',
+                500: '#F43F5E',
+                600: '#E11D48',
+                700: '#BE123C',
+                800: '#9F1239',
+                900: '#881337',
+              },
+              neutral: {
+                50: '#FAFAFA',
+                100: '#F4F4F5',
+                200: '#E4E4E7',
+                300: '#D4D4D8',
+                400: '#A1A1AA',
+                500: '#71717A',
+                600: '#52525B',
+                700: '#3F3F46',
+                800: '#27272A',
+                900: '#18181B',
+                950: '#09090B',
+              },
+              success: {
+                50: '#F0FDF4',
+                100: '#DCFCE7',
+                200: '#BBF7D0',
+                300: '#86EFAC',
+                400: '#4ADE80',
+                500: '#22C55E',
+                600: '#16A34A',
+                700: '#15803D',
+                800: '#166534',
+                900: '#14532D',
+              },
+              warning: {
+                50: '#FFFBEB',
+                100: '#FEF3C7',
+                200: '#FDE68A',
+                300: '#FCD34D',
+                400: '#FBBF24',
+                500: '#F59E0B',
+                600: '#D97706',
+                700: '#B45309',
+                800: '#92400E',
+                900: '#78350F',
+              },
+              error: {
+                50: '#FEF2F2',
+                100: '#FEE2E2',
+                200: '#FECACA',
+                300: '#FCA5A5',
+                400: '#F87171',
+                500: '#EF4444',
+                600: '#DC2626',
+                700: '#B91C1C',
+                800: '#991B1B',
+                900: '#7F1D1D',
+              },
+            },
+            fontFamily: {
+              sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+              ethiopic: ['"Noto Sans Ethiopic"', 'sans-serif'],
+            },
+            fontSize: {
+              'page-title': ['32px', { lineHeight: '40px', fontWeight: '800', letterSpacing: '-0.02em' }],
+              'section-heading': ['24px', { lineHeight: '32px', fontWeight: '700', letterSpacing: '-0.01em' }],
+              'card-heading': ['18px', { lineHeight: '28px', fontWeight: '600', letterSpacing: '-0.005em' }],
+              'body': ['15px', { lineHeight: '24px', fontWeight: '400' }],
+              'body-lg': ['16px', { lineHeight: '26px', fontWeight: '400' }],
+              'small': ['13px', { lineHeight: '18px', fontWeight: '400' }],
+              'button': ['15px', { lineHeight: '20px', fontWeight: '600', letterSpacing: '0.01em' }],
+            },
+            borderRadius: {
+              'lg': '14px',
+              'xl': '20px',
+              '2xl': '24px',
+              '3xl': '32px',
+            },
+            boxShadow: {
+              'soft': '0 4px 20px rgba(0, 0, 0, 0.08)',
+              'medium': '0 8px 30px rgba(0, 0, 0, 0.12)',
+              'card': '0 2px 12px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04)',
+              'glow': '0 0 20px rgba(124, 58, 237, 0.3)',
+              'glow-secondary': '0 0 20px rgba(20, 184, 166, 0.3)',
+            },
+          },
+        },
+      }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Ethiopic:wght@400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

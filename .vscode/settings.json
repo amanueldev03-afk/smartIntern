@@ -1,0 +1,21 @@
+{
+  // Use the project's own TypeScript version (node_modules/typescript)
+  // instead of the IDE's built-in version.
+  // This prevents false red errors from tsconfig options the IDE doesn't know yet.
+  "typescript.tsdk": "frontend/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+
+  // Exclude heavy folders from file watcher to keep IDE fast
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.venv/**": true,
+    "**/backend/.venv/**": true
+  },
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true
+  },
+
+  // Python: point to the backend venv
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python"
+}

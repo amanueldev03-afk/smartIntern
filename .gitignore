@@ -1,0 +1,62 @@
+# Virtual Environment
+backend/.venv/
+.venv/
+.venv
+**/.venv/
+venv/
+**/venv/
+backend/backend/
+
+# Python
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Node
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+frontend/dist/
+# Environment
+backend/.env
+frontend/.env
+.env
+*.env.local
+
+# SQLite
+db.sqlite3
+
+# Logs
+logs/
+*.log
+
+# Media
+backend/media/
+
+# Static
+backend/staticfiles/
+
+# IDE
+.vscode/*.log
+.vscode/extensions.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Migrations cache
+**/__pycache__/
+/generated/prisma
+
+ 
+
+ 
+
+ 
+
