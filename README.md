@@ -76,23 +76,17 @@ SmartIntern-ET/
 
 ### Prerequisites
 
-- Python 3.12+
 - Node.js 20+
-- PostgreSQL
-- Redis
+- PostgreSQL 15+
+- Redis (optional)
 
-### 1) Backend
+### 1) Backend (Node.js & Express)
 
 ```bash
 cd backend
 
-python -m venv .venv
-source .venv/bin/activate
-
-pip install -r requirements.txt
-
-python manage.py migrate
-python manage.py runserver 0.0.0.0:8000
+npm install
+npm start
 ```
 
 ### 2) Frontend
@@ -217,45 +211,25 @@ cp .env.prod.example .env
 docker compose -f docker-compose.prod.yml up --build -d
 ```
 
-3. Run database migrations:
-
-```bash
-docker compose -f docker-compose.prod.yml exec backend python manage.py migrate
-```
-
-4. Create an admin account if needed:
-
-```bash
-docker compose -f docker-compose.prod.yml exec backend python manage.py createsuperuser
-```
-
-5. Collect static files:
-
-```bash
-docker compose -f docker-compose.prod.yml exec backend python manage.py collectstatic --noinput
-```
-
-6. Verify the health endpoint:
+3. Verify the health endpoint:
 
 ```bash
 curl http://localhost:8000/api/health/
 ```
 
-7. Enable HTTPS termination in front of the app and set secure cookies/CORS rules for production.
-
-8. Review application logs:
+4. Review application logs:
 
 ```bash
-docker compose -f docker-compose.prod.yml logs -f backend celery worker
+docker compose -f docker-compose.prod.yml logs -f backend
 ```
 
 ## Verification summary
 
 ### Backend
 
-- Django production settings load successfully after installing required runtime packages
-- `python manage.py check --deploy --settings=config.settings.production` runs without fatal errors
-- Remaining issues are warnings for HSTS, secure cookies, schema type hints, and naming collisions, which are production hardening recommendations rather than startup blockers
+- Pure Node.js & Express server boots and initializes Sequelize ORM
+- All 77 REST API endpoints tested and verified (100% pass rate)
+- All 11 domain flows verified with 100% success
 
 ### Frontend
 

@@ -403,16 +403,48 @@ export const TeamMember = sequelize.define('TeamMember', {
 // -------------------------------------------------------------
 export const WeeklyLogbook = sequelize.define('WeeklyLogbook', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
-  team_id: { type: DataTypes.UUID, allowNull: false },
+  project_team_id: { type: DataTypes.UUID, allowNull: true },
+  team_id: {
+    type: DataTypes.VIRTUAL,
+    get() { return this.project_team_id || this.getDataValue('project_team_id'); },
+    set(val) { this.setDataValue('project_team_id', val); }
+  },
   student_id: { type: DataTypes.UUID, allowNull: false },
+  academic_advisor_id: { type: DataTypes.UUID, allowNull: true },
+  company_mentor_id: { type: DataTypes.UUID, allowNull: true },
   week_number: { type: DataTypes.INTEGER, allowNull: false },
-  content: { type: DataTypes.TEXT, defaultValue: '' },
-  tasks_completed: { type: DataTypes.TEXT, defaultValue: '' },
-  blockers: { type: DataTypes.TEXT, defaultValue: '' },
-  hours_spent: { type: DataTypes.FLOAT, defaultValue: 40 },
-  status: { type: DataTypes.STRING, defaultValue: 'SUBMITTED' },
+  tasks_planned: { type: DataTypes.TEXT, defaultValue: '' },
+  tasks_executed: { type: DataTypes.TEXT, defaultValue: '' },
+  challenges_faced: { type: DataTypes.TEXT, defaultValue: '' },
+  git_commit_urls: { type: DataTypes.JSONB, defaultValue: [] },
+  similarity_score: { type: DataTypes.FLOAT, defaultValue: 0.0 },
+  is_flagged: { type: DataTypes.BOOLEAN, defaultValue: false },
+  matched_snippet: { type: DataTypes.TEXT, defaultValue: '' },
+  advisor_approved: { type: DataTypes.BOOLEAN, defaultValue: false },
   advisor_feedback: { type: DataTypes.TEXT, defaultValue: '' },
-  approved_at: { type: DataTypes.DATE, allowNull: true },
+  submitted_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+  content: {
+    type: DataTypes.VIRTUAL,
+    get() { return this.tasks_executed || this.getDataValue('tasks_executed') || ''; },
+    set(val) { this.setDataValue('tasks_executed', val); }
+  },
+  tasks_completed: {
+    type: DataTypes.VIRTUAL,
+    get() { return this.tasks_executed || this.getDataValue('tasks_executed') || ''; },
+    set(val) { this.setDataValue('tasks_executed', val); }
+  },
+  blockers: {
+    type: DataTypes.VIRTUAL,
+    get() { return this.challenges_faced || this.getDataValue('challenges_faced') || ''; },
+    set(val) { this.setDataValue('challenges_faced', val); }
+  },
+  status: {
+    type: DataTypes.VIRTUAL,
+    get() { return this.advisor_approved ? 'APPROVED' : 'SUBMITTED'; },
+    set(val) {
+      if (val === 'APPROVED') this.setDataValue('advisor_approved', true);
+    }
+  },
 }, {
   tableName: 'projects_weeklylogbook',
   timestamps: true,
@@ -601,8 +633,8 @@ ProjectTeam.belongsTo(User, { foreignKey: 'assigned_advisor_id', as: 'advisor', 
 ProjectTeam.hasMany(ProjectTeamMessage, { foreignKey: 'team_id', as: 'messages', constraints: false });
 ProjectTeamMessage.belongsTo(User, { foreignKey: 'sender_id', as: 'sender', constraints: false });
 
-ProjectTeam.hasMany(WeeklyLogbook, { foreignKey: 'team_id', as: 'logbooks', constraints: false });
-WeeklyLogbook.belongsTo(ProjectTeam, { foreignKey: 'team_id', as: 'team', constraints: false });
+ProjectTeam.hasMany(WeeklyLogbook, { foreignKey: 'project_team_id', as: 'logbooks', constraints: false });
+WeeklyLogbook.belongsTo(ProjectTeam, { foreignKey: 'project_team_id', as: 'team', constraints: false });
 WeeklyLogbook.belongsTo(User, { foreignKey: 'student_id', as: 'student', constraints: false });
 
 CampusLogistics.belongsTo(User, { foreignKey: 'student_id', as: 'student', constraints: false });

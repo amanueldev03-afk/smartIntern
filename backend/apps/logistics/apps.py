@@ -1,8 +1,0 @@
-from django.apps import AppConfig
-
-
-class LogisticsConfig(AppConfig):
-    default_auto_field = "django.db.models.BigAutoField"
-    name = "apps.logistics"
-    label = "logistics"
-    verbose_name = "Campus Food & Housing Logistics"

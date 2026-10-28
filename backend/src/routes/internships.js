@@ -12,6 +12,7 @@ import {
 } from '../models/index.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { paginate, getPaginationParams } from '../utils/pagination.js';
+import { normalizeListing, findExactDuplicate } from '../services/dataNormalizer.js';
 
 const router = express.Router();
 
@@ -292,8 +293,13 @@ router.get('/admin/', requireAuth, requireAdmin, async (req, res) => {
 
 router.post('/admin/', requireAuth, requireAdmin, async (req, res) => {
   try {
+    const normalized = await normalizeListing(req.body, 'manual_admin');
+    const existing = await findExactDuplicate(normalized.content_hash);
+    if (existing) {
+      return res.status(200).json(formatInternship(existing));
+    }
     const internship = await Internship.create({
-      ...req.body,
+      ...normalized,
       is_verified: true,
       status: 'active',
     });

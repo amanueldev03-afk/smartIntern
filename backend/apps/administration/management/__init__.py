@@ -1,1 +1,0 @@
-"""Administration management commands package."""

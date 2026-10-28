@@ -5,7 +5,7 @@
     "dockerfilePath": "backend/Dockerfile"
   },
   "deploy": {
-    "startCommand": "/app/entrypoint.prod.sh gunicorn --config /app/gunicorn.conf.py config.wsgi:application",
+    "startCommand": "/app/entrypoint.prod.sh node server.js",
     "healthcheckPath": "/api/health/",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",

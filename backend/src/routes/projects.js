@@ -2,6 +2,7 @@ import express from 'express';
 import { ProjectTeam, TeamMember, ProjectTeamMessage, WeeklyLogbook, User } from '../models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
+import { checkLogbookPlagiarism } from '../services/plagiarismChecker.js';
 
 import sequelize from '../config/database.js';
 
@@ -290,10 +291,25 @@ router.get('/logbooks/', requireAuth, async (req, res) => {
 
 router.post('/logbooks/', requireAuth, async (req, res) => {
   try {
+    const tasksExecuted = req.body.tasks_executed || req.body.content || req.body.tasks_completed || '';
+    const weekNumber = Number(req.body.week_number) || 1;
+
+    let plagiarismResult = { similarity_score: 0.0, is_flagged: false, matched_snippet: '' };
+    try {
+      plagiarismResult = await checkLogbookPlagiarism(tasksExecuted, req.user.id, weekNumber);
+    } catch (plagErr) {
+      console.warn('[Logbook] Plagiarism check error:', plagErr.message);
+    }
+
     const logbook = await WeeklyLogbook.create({
       ...req.body,
       student_id: req.user.id,
-      status: 'SUBMITTED',
+      week_number: weekNumber,
+      tasks_executed: tasksExecuted,
+      similarity_score: plagiarismResult.similarity_score,
+      is_flagged: plagiarismResult.is_flagged,
+      matched_snippet: plagiarismResult.matched_snippet,
+      advisor_approved: false,
     });
     return res.status(201).json(logbook);
   } catch (err) {
