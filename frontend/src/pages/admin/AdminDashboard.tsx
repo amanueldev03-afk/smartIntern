@@ -463,9 +463,9 @@ export default function AdminDashboard() {
                 User Demographics
               </h2>
               <div className="grid gap-4 sm:grid-cols-3">
-                <StatCard label="Total Users" value={analytics.users.total} />
-                <StatCard label="Students" value={analytics.users.students} />
-                <StatCard label="Administrators" value={analytics.users.admins} />
+                <StatCard label="Total Users" value={analytics.users?.total ?? 0} />
+                <StatCard label="Students" value={analytics.users?.students ?? 0} />
+                <StatCard label="Administrators" value={analytics.users?.admins ?? 0} />
               </div>
             </section>
 
@@ -474,9 +474,9 @@ export default function AdminDashboard() {
                 Internship Inventory
               </h2>
               <div className="grid gap-4 sm:grid-cols-3">
-                <StatCard label="Total Internships" value={analytics.internships.total} />
-                <StatCard label="Active Listings" value={analytics.internships.active} />
-                <StatCard label="Needs Review" value={analytics.internships.needs_review} />
+                <StatCard label="Total Internships" value={analytics.internships?.total ?? 0} />
+                <StatCard label="Active Listings" value={analytics.internships?.active ?? 0} />
+                <StatCard label="Needs Review" value={analytics.internships?.needs_review ?? 0} />
               </div>
             </section>
 
@@ -485,7 +485,7 @@ export default function AdminDashboard() {
                 <h2 id="skills-heading" className="text-base font-bold text-neutral-900 dark:text-white mb-4">
                   Most-Requested Technical Skills
                 </h2>
-                {analytics.most_requested_skills.length === 0 ? (
+                {(!analytics.most_requested_skills || analytics.most_requested_skills.length === 0) ? (
                   <p className="text-xs text-neutral-500 font-medium">No internship skill demand recorded yet.</p>
                 ) : (
                   <div className="space-y-4">
@@ -516,10 +516,10 @@ export default function AdminDashboard() {
                   Recommendation Performance
                 </h2>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-                  <StatCard label="Total Matches Generated" value={analytics.recommendations.total} />
+                  <StatCard label="Total Matches Generated" value={analytics.recommendations?.total ?? 0} />
                   <StatCard
                     label="Average Match Score"
-                    value={analytics.recommendations.average_match_score === null ? 'No data' : `${analytics.recommendations.average_match_score.toFixed(1)}%`}
+                    value={analytics.recommendations?.average_match_score == null ? 'No data' : `${Number(analytics.recommendations.average_match_score).toFixed(1)}%`}
                   />
                 </div>
               </section>

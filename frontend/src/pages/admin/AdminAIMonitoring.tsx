@@ -18,10 +18,11 @@ export default function AdminAIMonitoring() {
     return () => { isCurrent = false }
   }, [])
 
-  const maxDaily = data ? Math.max(...data.recommendations_per_day.map((d) => d.count), 1) : 1
-  const totalRecommendations = data
-    ? data.score_distribution.reduce((sum, b) => sum + b.count, 0)
-    : 0
+  const recsPerDay = Array.isArray(data?.recommendations_per_day) ? data.recommendations_per_day : []
+  const scoreDist = Array.isArray(data?.score_distribution) ? data.score_distribution : []
+  const maxDaily = recsPerDay.length > 0 ? Math.max(...recsPerDay.map((d) => d.count), 1) : 1
+  const totalRecommendations = scoreDist.reduce((sum, b) => sum + b.count, 0)
+
 
   return (
     <main className="min-h-screen py-8 px-4 sm:px-6 lg:px-8 animate-fade-in pb-16">
@@ -94,7 +95,7 @@ export default function AdminAIMonitoring() {
                     <Calendar className="w-4 h-4" />
                   </div>
                 </div>
-                <p className="mt-3 text-3xl font-black gradient-text">{data.recommendations_per_day.length}</p>
+                <p className="mt-3 text-3xl font-black gradient-text">{recsPerDay.length}</p>
                 <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Historical telemetry log</p>
               </div>
             </div>
@@ -102,11 +103,11 @@ export default function AdminAIMonitoring() {
             <div className="grid gap-6 lg:grid-cols-2">
               <section className="card-gradient rounded-3xl p-6 sm:p-8 shadow-card space-y-4">
                 <h2 className="text-base font-bold text-neutral-900 dark:text-white">Recommendations Per Day</h2>
-                {data.recommendations_per_day.length === 0 ? (
+                {recsPerDay.length === 0 ? (
                   <p className="text-xs text-neutral-500 font-medium">No recommendation data available yet.</p>
                 ) : (
                   <div className="space-y-3 pt-2">
-                    {data.recommendations_per_day.map((day) => (
+                    {recsPerDay.map((day) => (
                       <div key={day.date} className="flex items-center gap-3">
                         <span className="w-24 text-xs font-semibold text-neutral-500 dark:text-neutral-400">{day.date}</span>
                         <div className="flex-1 h-4 rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
@@ -128,8 +129,8 @@ export default function AdminAIMonitoring() {
                   <p className="text-xs text-neutral-500 font-medium">No recommendation data available yet.</p>
                 ) : (
                   <div className="space-y-4 pt-2">
-                    {data.score_distribution.map((bucket) => {
-                      const maxBucket = Math.max(...data.score_distribution.map((b) => b.count), 1)
+                    {scoreDist.map((bucket) => {
+                      const maxBucket = Math.max(...scoreDist.map((b) => b.count), 1)
                       return (
                         <div key={bucket.range} className="space-y-1.5">
                           <div className="flex justify-between text-xs font-bold">
