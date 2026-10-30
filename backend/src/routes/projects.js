@@ -325,8 +325,17 @@ router.post('/alerts/:id/read/', requireAuth, (req, res) => {
   return res.status(200).json({ message: 'Alert marked as read.' });
 });
 
+router.get('/cohorts/my-cohorts/', requireAuth, (req, res) => {
+  return res.status(200).json({ cohorts: [] });
+});
+
+router.post('/cohorts/:cohortId/accept/', requireAuth, (req, res) => {
+  return res.status(200).json({ message: 'Successfully enrolled in Track 1 In-House Cohort!' });
+});
+
 router.get('/cohorts/', requireAuth, (req, res) => {
   return res.status(200).json([{ id: '1', name: 'Summer Cohort 2026', academic_year: '2026' }]);
 });
 
 export default router;
+

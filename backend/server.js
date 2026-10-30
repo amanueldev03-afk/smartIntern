@@ -80,6 +80,8 @@ app.use('/api/v1/students', studentsRoutes);
 
 app.use('/api/internships', internshipsRoutes);
 app.use('/api/v1/internships', internshipsRoutes);
+app.use('/api/applications', internshipsRoutes);
+app.use('/api/v1/applications', internshipsRoutes);
 
 app.use('/api/recommendations', recommendationsRoutes);
 
@@ -103,6 +105,7 @@ app.use('/api/v1/companies', companiesRoutes);
 app.use('/api/companies', companiesRoutes);
 
 app.use('/api/admin', adminRoutes);
+app.use('/api/v1/admin', adminRoutes);
 
 // Global Error Handler
 app.use((err, req, res, next) => {

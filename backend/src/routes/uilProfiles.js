@@ -135,4 +135,40 @@ router.get('/departments/roster-excel/', requireAuth, excelRosterHandler);
 router.get('/export-excel/', requireAuth, excelRosterHandler);
 router.get('/roster-excel/', requireAuth, excelRosterHandler);
 
+// -------------------------------------------------------------
+// Student & Staff Chat Stubs
+// -------------------------------------------------------------
+router.get('/student/dean-chat/', requireAuth, (req, res) => {
+  return res.status(200).json({
+    messages: [],
+    dean: { name: 'Dr. Haile Dean', title: 'Department Dean' },
+    unread_count: 0
+  });
+});
+
+router.post('/student/dean-chat/send/', requireAuth, (req, res) => {
+  return res.status(201).json({ message: 'Message sent successfully.' });
+});
+
+router.get('/student/uil-chat/', requireAuth, (req, res) => {
+  return res.status(200).json({
+    messages: [],
+    uil_officer: { name: 'Abebe Kebede', title: 'UIL Head Officer' },
+    unread_count: 0
+  });
+});
+
+router.post('/student/uil-chat/send/', requireAuth, (req, res) => {
+  return res.status(201).json({ message: 'Message sent successfully.' });
+});
+
+router.get('/dean/chat/unread-count/', requireAuth, (req, res) => res.status(200).json({ unread_count: 0 }));
+router.get('/dean/chat/:studentId/', requireAuth, (req, res) => res.status(200).json({ messages: [] }));
+router.post('/dean/chat/:studentId/send/', requireAuth, (req, res) => res.status(201).json({ message: 'Message sent' }));
+
+router.get('/uil/chat/unread-count/', requireAuth, (req, res) => res.status(200).json({ unread_count: 0 }));
+router.get('/uil/chat/:studentId/', requireAuth, (req, res) => res.status(200).json({ messages: [] }));
+router.post('/uil/chat/:studentId/send/', requireAuth, (req, res) => res.status(201).json({ message: 'Message sent' }));
+
 export default router;
+

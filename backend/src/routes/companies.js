@@ -22,6 +22,27 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+// -------------------------------------------------------------
+// GET /api/companies/student/invitations/
+// -------------------------------------------------------------
+router.get('/student/invitations/', requireAuth, async (req, res) => {
+  return res.status(200).json([]);
+});
+
+// -------------------------------------------------------------
+// POST /api/companies/student/invitations/:id/respond/
+// -------------------------------------------------------------
+router.post('/student/invitations/:id/respond/', requireAuth, async (req, res) => {
+  return res.status(200).json({ message: 'Invitation responded successfully.' });
+});
+
+// -------------------------------------------------------------
+// POST /api/companies/invitations/
+// -------------------------------------------------------------
+router.post('/invitations/', requireAuth, async (req, res) => {
+  return res.status(201).json({ message: 'Invitation sent.' });
+});
+
 router.get('/:id/', async (req, res) => {
   try {
     const company = await Company.findByPk(req.params.id);

@@ -171,6 +171,45 @@ router.delete('/saved/:id/', requireAuth, async (req, res) => {
 });
 
 // -------------------------------------------------------------
+// GET /api/applications/history/ & GET /api/internships/applications/history/
+// -------------------------------------------------------------
+router.get(['/applications/history/', '/history/'], requireAuth, async (req, res) => {
+  try {
+    const { page = 1, page_size = 20 } = req.query;
+    const limit = parseInt(page_size, 10);
+    const offset = (parseInt(page, 10) - 1) * limit;
+
+    const { count, rows } = await InternshipApplication.findAndCountAll({
+      where: { student_id: req.user.id },
+      include: [{ model: Internship, as: 'internship' }],
+      limit,
+      offset,
+      order: [['created_at', 'DESC']]
+    });
+
+    const results = rows.map((app) => ({
+      id: Number(app.id),
+      internship: Number(app.internship_id),
+      internship_title: app.internship?.title || 'Internship Position',
+      organization_name: app.internship?.organization_name || 'Organization',
+      clicked_apply: true,
+      applied_date: app.created_at,
+      created_at: app.created_at,
+      updated_at: app.updated_at,
+    }));
+
+    return res.status(200).json({
+      count,
+      next: offset + limit < count ? `?page=${parseInt(page, 10) + 1}` : null,
+      previous: parseInt(page, 10) > 1 ? `?page=${parseInt(page, 10) - 1}` : null,
+      results,
+    });
+  } catch (err) {
+    return res.status(500).json({ detail: err.message });
+  }
+});
+
+// -------------------------------------------------------------
 // GET /api/internships/applications/ & POST /api/internships/applications/add/
 // -------------------------------------------------------------
 router.get('/applications/', requireAuth, async (req, res) => {

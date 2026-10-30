@@ -1,7 +1,8 @@
 import express from 'express';
+import { Op } from 'sequelize';
 import { User, StudentProfile } from '../models/index.js';
 import { authenticateUser, registerStudent, hashPassword, comparePassword, generateTokens, verifyToken } from '../services/authService.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
 
 const router = express.Router();
@@ -217,4 +218,43 @@ router.post('/change-password/', requireAuth, async (req, res) => {
   return res.status(200).json({ message: 'Password changed successfully.' });
 });
 
+// -------------------------------------------------------------
+// GET /api/v1/auth/admin/pending-staff/
+// -------------------------------------------------------------
+router.get('/admin/pending-staff/', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const staff = await User.findAll({
+      where: {
+        role: {
+          [Op.notIn]: ['student', 'admin']
+        }
+      },
+      attributes: ['id', 'email', 'username', 'first_name', 'last_name', 'role', 'department', 'university_name', 'staff_id_number', 'is_approved', 'is_active', 'created_at'],
+      order: [['created_at', 'DESC']]
+    });
+    return res.status(200).json(staff);
+  } catch (err) {
+    return res.status(500).json({ detail: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// POST /api/v1/auth/admin/approve-staff/:id/
+// -------------------------------------------------------------
+router.post('/admin/approve-staff/:id/', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id);
+    if (!user) {
+      return res.status(404).json({ detail: 'Staff user not found.' });
+    }
+    user.is_approved = true;
+    user.is_active = true;
+    await user.save();
+    return res.status(200).json({ message: 'Staff member approved successfully.', user });
+  } catch (err) {
+    return res.status(500).json({ detail: err.message });
+  }
+});
+
 export default router;
+
