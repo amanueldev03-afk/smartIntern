@@ -26,7 +26,7 @@ async function run() {
   const loginRes = await request({
     hostname: 'localhost', port: 8000, path: '/api/auth/login/', method: 'POST',
     headers: { 'Content-Type': 'application/json' }
-  }, { email: 'student@example.com', password: 'Password123!' });
+  }, { email: 'student@smartintern.et', password: 'StudentPassword123!' });
   console.log('Student Login status:', loginRes.status, 'Has access token:', !!loginRes.body.access);
   const studentToken = loginRes.body.access;
 
@@ -34,7 +34,7 @@ async function run() {
   const adminLoginRes = await request({
     hostname: 'localhost', port: 8000, path: '/api/auth/login/', method: 'POST',
     headers: { 'Content-Type': 'application/json' }
-  }, { email: 'admin1@smartintern.et', password: 'Admin@1234' });
+  }, { email: 'admin@smartintern.et', password: 'AdminPassword123!' });
   console.log('Admin Login status:', adminLoginRes.status, 'Has access token:', !!adminLoginRes.body.access);
   const adminToken = adminLoginRes.body.access;
 
@@ -53,8 +53,9 @@ async function run() {
   console.log('Recommendations Status:', recRes.status, 'Results count:', recRes.body.results?.length);
 
   console.log('\n--- 5. Testing Save Internship Flow ---');
+  const targetInternshipId = recRes.body.results?.[0]?.internship?.id || recRes.body.results?.[0]?.id || 6;
   const saveRes = await request({
-    hostname: 'localhost', port: 8000, path: '/api/internships/1/save/', method: 'POST',
+    hostname: 'localhost', port: 8000, path: `/api/internships/${targetInternshipId}/save/`, method: 'POST',
     headers: { 'Authorization': 'Bearer ' + studentToken, 'Content-Type': 'application/json' }
   });
   console.log('Save Status:', saveRes.status, 'Message:', saveRes.body.message);

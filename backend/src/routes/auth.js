@@ -95,19 +95,17 @@ router.get('/verify-email/:uid/:token/', async (req, res) => {
   const { uid } = req.params;
   try {
     // Decode uid if integer or base64
-    let userId = parseInt(uid, 10);
-    if (isNaN(userId)) {
+    let user = await User.findByPk(uid);
+    if (!user) {
       try {
         const decodedStr = Buffer.from(uid, 'base64').toString('ascii');
-        userId = parseInt(decodedStr, 10);
+        user = await User.findByPk(decodedStr);
       } catch {}
     }
-    if (userId) {
-      const user = await User.findByPk(userId);
-      if (user) {
-        user.is_email_verified = true;
-        await user.save();
-      }
+    if (user) {
+      user.is_email_verified = true;
+      user.is_active = true;
+      await user.save();
     }
     return res.status(200).json({
       message: 'Email verified successfully. You can now log in.'

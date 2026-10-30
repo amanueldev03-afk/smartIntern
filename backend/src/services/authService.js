@@ -184,8 +184,8 @@ export const registerStudent = async (data) => {
     last_name: lastName,
     role: normalizedRole,
     is_active: true,
-    is_email_verified: isAdmin, // auto verify admin
-    is_approved: isAdmin || normalizedRole === 'student',
+    is_email_verified: true,
+    is_approved: true,
     is_staff: isAdmin,
     is_superuser: isAdmin,
   });

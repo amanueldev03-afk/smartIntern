@@ -3,6 +3,7 @@ import cors from 'cors';
 import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { Op } from 'sequelize';
 
 import { PORT, MEDIA_ROOT } from './src/config/env.js';
 import sequelize, { connectDB } from './src/config/database.js';
@@ -119,15 +120,19 @@ app.use((err, req, res, next) => {
 const seedInitialData = async () => {
   try {
     // 1. Ensure Admin User exists
-    let admin = await User.findOne({ where: { email: 'admin1@smartintern.et' } });
+    let admin = await User.findOne({
+      where: {
+        [Op.or]: [{ email: 'admin@smartintern.et' }, { email: 'admin1@smartintern.et' }, { username: 'admin' }]
+      }
+    });
     if (!admin) {
-      const pw = await hashPassword('Admin@1234');
+      const pw = await hashPassword('AdminPassword123!');
       await User.create({
-        email: 'admin1@smartintern.et',
-        username: 'admin1',
+        email: 'admin@smartintern.et',
+        username: 'admin',
         password: pw,
         first_name: 'System',
-        last_name: 'Admin',
+        last_name: 'Administrator',
         role: 'admin',
         is_staff: true,
         is_superuser: true,
@@ -135,16 +140,20 @@ const seedInitialData = async () => {
         is_email_verified: true,
         is_approved: true,
       });
-      console.log('[Seed] Admin account provisioned: admin1 / Admin@1234');
+      console.log('[Seed] Admin account provisioned: admin@smartintern.et / AdminPassword123!');
     }
 
-    // 2. Ensure test student exists
-    let student = await User.findOne({ where: { email: 'student@example.com' } });
+    // 2. Ensure Student User exists
+    let student = await User.findOne({
+      where: {
+        [Op.or]: [{ email: 'student@smartintern.et' }, { email: 'student@example.com' }, { username: 'student' }]
+      }
+    });
     if (!student) {
-      const pw = await hashPassword('Password123!');
+      const pw = await hashPassword('StudentPassword123!');
       await User.create({
-        email: 'student@example.com',
-        username: 'student1',
+        email: 'student@smartintern.et',
+        username: 'student',
         password: pw,
         first_name: 'Amanuel',
         last_name: 'Student',
@@ -153,7 +162,7 @@ const seedInitialData = async () => {
         is_email_verified: true,
         is_approved: true,
       });
-      console.log('[Seed] Test student provisioned: student@example.com / Password123!');
+      console.log('[Seed] Student provisioned: student@smartintern.et / StudentPassword123!');
     }
 
     // 3. Ensure Skills exist
