@@ -152,6 +152,13 @@ export const StudentSkill = sequelize.define('StudentSkill', {
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at',
+  indexes: [
+    {
+      unique: true,
+      fields: ['student_id', 'skill_id'],
+      name: 'student_skill_unique'
+    }
+  ]
 });
 
 // -------------------------------------------------------------
@@ -181,6 +188,13 @@ export const StudentInterest = sequelize.define('StudentInterest', {
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at',
+  indexes: [
+    {
+      unique: true,
+      fields: ['student_id', 'interest_id'],
+      name: 'student_interest_unique'
+    }
+  ]
 });
 
 // -------------------------------------------------------------
@@ -306,6 +320,13 @@ export const InternshipSkillJoin = sequelize.define('InternshipSkillJoin', {
 }, {
   tableName: 'internships_internship_required_skills',
   timestamps: false,
+  indexes: [
+    {
+      unique: true,
+      fields: ['internship_id', 'skill_id'],
+      name: 'internship_skill_unique'
+    }
+  ]
 });
 
 // -------------------------------------------------------------
@@ -320,6 +341,13 @@ export const SavedInternship = sequelize.define('SavedInternship', {
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at',
+  indexes: [
+    {
+      unique: true,
+      fields: ['student_id', 'internship_id'],
+      name: 'saved_internship_unique'
+    }
+  ]
 });
 
 // -------------------------------------------------------------
@@ -336,6 +364,13 @@ export const InternshipApplication = sequelize.define('InternshipApplication', {
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at',
+  indexes: [
+    {
+      unique: true,
+      fields: ['student_id', 'internship_id'],
+      name: 'internship_application_unique'
+    }
+  ]
 });
 
 // -------------------------------------------------------------
@@ -362,6 +397,13 @@ export const Recommendation = sequelize.define('Recommendation', {
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at',
+  indexes: [
+    {
+      unique: true,
+      fields: ['student_id', 'internship_id'],
+      name: 'recommendation_unique'
+    }
+  ]
 });
 
 // -------------------------------------------------------------
@@ -606,46 +648,299 @@ export const StudentActivityLog = sequelize.define('StudentActivityLog', {
 });
 
 // -------------------------------------------------------------
-// Associations (Constraints false to respect existing DB)
+// Associations with Database-Level Referential Integrity
 // -------------------------------------------------------------
-User.hasOne(StudentProfile, { foreignKey: 'user_id', as: 'profile', constraints: false });
-StudentProfile.belongsTo(User, { foreignKey: 'user_id', as: 'user', constraints: false });
+// User ↔ StudentProfile (One-to-One)
+// Deletion: CASCADE - StudentProfile depends entirely on User
+User.hasOne(StudentProfile, {
+  foreignKey: 'user_id',
+  as: 'profile',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
+StudentProfile.belongsTo(User, {
+  foreignKey: 'user_id',
+  as: 'user',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
 
-User.hasMany(CV, { foreignKey: 'student_id', as: 'cvs', constraints: false });
-CV.belongsTo(User, { foreignKey: 'student_id', as: 'student', constraints: false });
+// User ↔ CV (One-to-Many)
+// Deletion: CASCADE - CV documents belong to user
+User.hasMany(CV, {
+  foreignKey: 'student_id',
+  as: 'cvs',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
+CV.belongsTo(User, {
+  foreignKey: 'student_id',
+  as: 'student',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
 
-StudentProfile.belongsToMany(Skill, { through: StudentSkill, foreignKey: 'student_id', otherKey: 'skill_id', as: 'skills', constraints: false });
-Skill.belongsToMany(StudentProfile, { through: StudentSkill, foreignKey: 'skill_id', otherKey: 'student_id', as: 'students', constraints: false });
+// StudentProfile ↔ Skill (Many-to-Many through StudentSkill)
+// Deletion: CASCADE - Join table records depend on both entities
+StudentProfile.belongsToMany(Skill, {
+  through: StudentSkill,
+  foreignKey: 'student_id',
+  otherKey: 'skill_id',
+  as: 'skills',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
+Skill.belongsToMany(StudentProfile, {
+  through: StudentSkill,
+  foreignKey: 'skill_id',
+  otherKey: 'student_id',
+  as: 'students',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
 
-StudentProfile.belongsToMany(CareerInterest, { through: StudentInterest, foreignKey: 'student_id', otherKey: 'interest_id', as: 'interests', constraints: false });
-CareerInterest.belongsToMany(StudentProfile, { through: StudentInterest, foreignKey: 'interest_id', otherKey: 'student_id', as: 'students', constraints: false });
+// StudentProfile ↔ CareerInterest (Many-to-Many through StudentInterest)
+// Deletion: CASCADE - Join table records depend on both entities
+StudentProfile.belongsToMany(CareerInterest, {
+  through: StudentInterest,
+  foreignKey: 'student_id',
+  otherKey: 'interest_id',
+  as: 'interests',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
+CareerInterest.belongsToMany(StudentProfile, {
+  through: StudentInterest,
+  foreignKey: 'interest_id',
+  otherKey: 'student_id',
+  as: 'students',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
 
-Internship.belongsToMany(Skill, { through: InternshipSkillJoin, foreignKey: 'internship_id', otherKey: 'skill_id', as: 'skills', constraints: false });
-Skill.belongsToMany(Internship, { through: InternshipSkillJoin, foreignKey: 'skill_id', otherKey: 'internship_id', as: 'internships', constraints: false });
+// Internship ↔ Skill (Many-to-Many through InternshipSkillJoin)
+// Deletion: CASCADE - Join table records depend on both entities
+Internship.belongsToMany(Skill, {
+  through: InternshipSkillJoin,
+  foreignKey: 'internship_id',
+  otherKey: 'skill_id',
+  as: 'skills',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
+Skill.belongsToMany(Internship, {
+  through: InternshipSkillJoin,
+  foreignKey: 'skill_id',
+  otherKey: 'internship_id',
+  as: 'internships',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
 
-SavedInternship.belongsTo(Internship, { foreignKey: 'internship_id', as: 'internship', constraints: false });
-SavedInternship.belongsTo(User, { foreignKey: 'student_id', as: 'user', constraints: false });
+// SavedInternship ↔ Internship (Many-to-One)
+// Deletion: CASCADE - Saved internships have no independent meaning without Internship
+SavedInternship.belongsTo(Internship, {
+  foreignKey: 'internship_id',
+  as: 'internship',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
 
-InternshipApplication.belongsTo(Internship, { foreignKey: 'internship_id', as: 'internship', constraints: false });
-InternshipApplication.belongsTo(User, { foreignKey: 'student_id', as: 'user', constraints: false });
+// SavedInternship ↔ User (Many-to-One)
+// Deletion: CASCADE - Saved internships are user-specific
+SavedInternship.belongsTo(User, {
+  foreignKey: 'student_id',
+  as: 'user',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
 
-Recommendation.belongsTo(Internship, { foreignKey: 'internship_id', as: 'internship', constraints: false });
-Recommendation.belongsTo(User, { foreignKey: 'student_id', as: 'user', constraints: false });
+// InternshipApplication ↔ Internship (Many-to-One)
+// Deletion: RESTRICT - Applications have historical value, prevent Internship deletion
+InternshipApplication.belongsTo(Internship, {
+  foreignKey: 'internship_id',
+  as: 'internship',
+  onDelete: 'RESTRICT',
+  onUpdate: 'CASCADE'
+});
 
-ProjectTeam.hasMany(TeamMember, { foreignKey: 'team_id', as: 'members', constraints: false });
-TeamMember.belongsTo(ProjectTeam, { foreignKey: 'team_id', as: 'team', constraints: false });
-TeamMember.belongsTo(User, { foreignKey: 'student_id', as: 'studentUser', constraints: false });
+// InternshipApplication ↔ User (Many-to-One)
+// Deletion: RESTRICT - Applications have historical value, prevent User deletion
+InternshipApplication.belongsTo(User, {
+  foreignKey: 'student_id',
+  as: 'user',
+  onDelete: 'RESTRICT',
+  onUpdate: 'CASCADE'
+});
 
-ProjectTeam.belongsTo(User, { foreignKey: 'assigned_advisor_id', as: 'advisor', constraints: false });
-ProjectTeam.hasMany(ProjectTeamMessage, { foreignKey: 'team_id', as: 'messages', constraints: false });
-ProjectTeamMessage.belongsTo(User, { foreignKey: 'sender_id', as: 'sender', constraints: false });
+// Recommendation ↔ Internship (Many-to-One)
+// Deletion: CASCADE - Recommendations have no independent meaning without Internship
+Recommendation.belongsTo(Internship, {
+  foreignKey: 'internship_id',
+  as: 'internship',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
 
-ProjectTeam.hasMany(WeeklyLogbook, { foreignKey: 'project_team_id', as: 'logbooks', constraints: false });
-WeeklyLogbook.belongsTo(ProjectTeam, { foreignKey: 'project_team_id', as: 'team', constraints: false });
-WeeklyLogbook.belongsTo(User, { foreignKey: 'student_id', as: 'student', constraints: false });
+// Recommendation ↔ User (Many-to-One)
+// Deletion: CASCADE - Recommendations are user-specific and regenerable
+Recommendation.belongsTo(User, {
+  foreignKey: 'student_id',
+  as: 'user',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
 
-CampusLogistics.belongsTo(User, { foreignKey: 'student_id', as: 'student', constraints: false });
-Notification.belongsTo(User, { foreignKey: 'recipient_id', as: 'user', constraints: false });
+// ProjectTeam ↔ TeamMember (One-to-Many)
+// Deletion: CASCADE - Team members depend on team
+ProjectTeam.hasMany(TeamMember, {
+  foreignKey: 'team_id',
+  as: 'members',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
+TeamMember.belongsTo(ProjectTeam, {
+  foreignKey: 'team_id',
+  as: 'team',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
+
+// TeamMember ↔ User (Many-to-One)
+// Deletion: RESTRICT - Team membership has historical value
+TeamMember.belongsTo(User, {
+  foreignKey: 'student_id',
+  as: 'studentUser',
+  onDelete: 'RESTRICT',
+  onUpdate: 'CASCADE'
+});
+
+// ProjectTeam ↔ User (Advisor) (Many-to-One)
+// Deletion: SET NULL - Advisor assignment is optional and can be reassigned
+ProjectTeam.belongsTo(User, {
+  foreignKey: 'assigned_advisor_id',
+  as: 'advisor',
+  onDelete: 'SET NULL',
+  onUpdate: 'CASCADE'
+});
+
+// ProjectTeam ↔ ProjectTeamMessage (One-to-Many)
+// Deletion: CASCADE - Messages belong to team
+ProjectTeam.hasMany(ProjectTeamMessage, {
+  foreignKey: 'team_id',
+  as: 'messages',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
+ProjectTeamMessage.belongsTo(ProjectTeam, {
+  foreignKey: 'team_id',
+  as: 'team',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
+
+// ProjectTeamMessage ↔ User (Sender) (Many-to-One)
+// Deletion: RESTRICT - Messages preserve who sent them
+ProjectTeamMessage.belongsTo(User, {
+  foreignKey: 'sender_id',
+  as: 'sender',
+  onDelete: 'RESTRICT',
+  onUpdate: 'CASCADE'
+});
+
+// ProjectTeam ↔ WeeklyLogbook (One-to-Many)
+// Deletion: CASCADE - Logbooks belong to team
+ProjectTeam.hasMany(WeeklyLogbook, {
+  foreignKey: 'project_team_id',
+  as: 'logbooks',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
+WeeklyLogbook.belongsTo(ProjectTeam, {
+  foreignKey: 'project_team_id',
+  as: 'team',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
+
+// WeeklyLogbook ↔ User (Student) (Many-to-One)
+// Deletion: RESTRICT - Logbooks have historical value
+WeeklyLogbook.belongsTo(User, {
+  foreignKey: 'student_id',
+  as: 'student',
+  onDelete: 'RESTRICT',
+  onUpdate: 'CASCADE'
+});
+
+// CampusLogistics ↔ User (Student) (Many-to-One)
+// Deletion: RESTRICT - Logistics records have historical value
+CampusLogistics.belongsTo(User, {
+  foreignKey: 'student_id',
+  as: 'student',
+  onDelete: 'RESTRICT',
+  onUpdate: 'CASCADE'
+});
+
+// Notification ↔ User (Recipient) (Many-to-One)
+// Deletion: CASCADE - Notifications are user-specific and transient
+Notification.belongsTo(User, {
+  foreignKey: 'recipient_id',
+  as: 'user',
+  onDelete: 'CASCADE',
+  onUpdate: 'CASCADE'
+});
+
+// -------------------------------------------------------------
+// Additional User References (Explicit Associations)
+// These foreign keys exist in models but lacked explicit associations
+// -------------------------------------------------------------
+// WeeklyLogbook ↔ User (Academic Advisor) - Optional, nullable
+WeeklyLogbook.belongsTo(User, {
+  foreignKey: 'academic_advisor_id',
+  as: 'academicAdvisor',
+  onDelete: 'SET NULL',
+  onUpdate: 'CASCADE'
+});
+
+// WeeklyLogbook ↔ User (Company Mentor) - Optional, nullable
+WeeklyLogbook.belongsTo(User, {
+  foreignKey: 'company_mentor_id',
+  as: 'companyMentor',
+  onDelete: 'SET NULL',
+  onUpdate: 'CASCADE'
+});
+
+// CampusLogistics ↔ User (Dean Signed By) - Optional, nullable
+CampusLogistics.belongsTo(User, {
+  foreignKey: 'dean_signed_by_id',
+  as: 'deanSignedBy',
+  onDelete: 'SET NULL',
+  onUpdate: 'CASCADE'
+});
+
+// CampusLogistics ↔ User (Meal Card Issued By) - Optional, nullable
+CampusLogistics.belongsTo(User, {
+  foreignKey: 'meal_card_issued_by_id',
+  as: 'mealCardIssuedBy',
+  onDelete: 'SET NULL',
+  onUpdate: 'CASCADE'
+});
+
+// CampusLogistics ↔ User (Key Issued By) - Optional, nullable
+CampusLogistics.belongsTo(User, {
+  foreignKey: 'key_issued_by_id',
+  as: 'keyIssuedBy',
+  onDelete: 'SET NULL',
+  onUpdate: 'CASCADE'
+});
+
+// Notification ↔ User (Actor) - Optional, nullable
+Notification.belongsTo(User, {
+  foreignKey: 'actor_id',
+  as: 'actor',
+  onDelete: 'SET NULL',
+  onUpdate: 'CASCADE'
+});
 
 export default {
   User,
