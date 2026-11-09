@@ -43,7 +43,7 @@ User.prototype.getFullName = function() {
 // -------------------------------------------------------------
 export const StudentProfile = sequelize.define('StudentProfile', {
   id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-  user_id: { type: DataTypes.UUID, allowNull: false },
+  user_id: { type: DataTypes.UUID, allowNull: false, unique: true },
   phone: { type: DataTypes.STRING, defaultValue: '' },
   country: { type: DataTypes.STRING, defaultValue: 'Ethiopia' },
   city: { type: DataTypes.STRING, defaultValue: 'Addis Ababa' },
@@ -62,8 +62,8 @@ export const StudentProfile = sequelize.define('StudentProfile', {
   minimum_compensation: { type: DataTypes.FLOAT, allowNull: true },
   maximum_compensation: { type: DataTypes.FLOAT, allowNull: true },
   compensation_currency: { type: DataTypes.STRING, defaultValue: 'ETB' },
-  preferred_locations: { 
-    type: DataTypes.JSONB, 
+  preferred_locations: {
+    type: DataTypes.JSONB,
     defaultValue: [],
     get() {
       const val = this.getDataValue('preferred_locations');
@@ -75,8 +75,8 @@ export const StudentProfile = sequelize.define('StudentProfile', {
     }
   },
   willing_to_relocate: { type: DataTypes.BOOLEAN, defaultValue: false },
-  preferred_industries: { 
-    type: DataTypes.JSONB, 
+  preferred_industries: {
+    type: DataTypes.JSONB,
     defaultValue: [],
     get() {
       const val = this.getDataValue('preferred_industries');
@@ -87,8 +87,8 @@ export const StudentProfile = sequelize.define('StudentProfile', {
       return val;
     }
   },
-  preferred_roles: { 
-    type: DataTypes.JSONB, 
+  preferred_roles: {
+    type: DataTypes.JSONB,
     defaultValue: [],
     get() {
       const val = this.getDataValue('preferred_roles');
@@ -113,6 +113,13 @@ export const StudentProfile = sequelize.define('StudentProfile', {
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at',
+  indexes: [
+    {
+      unique: true,
+      fields: ['user_id'],
+      name: 'student_profile_user_id_unique'
+    }
+  ]
 });
 
 // -------------------------------------------------------------
@@ -384,7 +391,7 @@ export const ProjectTeam = sequelize.define('ProjectTeam', {
 export const TeamMember = sequelize.define('TeamMember', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
   team_id: { type: DataTypes.UUID, allowNull: false },
-  student_id: { type: DataTypes.BIGINT, allowNull: false },
+  student_id: { type: DataTypes.UUID, allowNull: false },
   is_leader: { type: DataTypes.BOOLEAN, defaultValue: false, allowNull: false },
   assigned_role: { type: DataTypes.STRING, defaultValue: 'Full Stack Engineer' },
   primary_stack: {
