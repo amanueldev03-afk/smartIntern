@@ -7,7 +7,11 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node scripts/test_endpoints.js"
+    "test": "node scripts/test_endpoints.js",
+    "migrate": "node db/migrate.js up",
+    "migrate:down": "node db/migrate.js down",
+    "migrate:status": "node db/migrate.js status",
+    "seed": "node db/seed.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
