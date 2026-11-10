@@ -1,6 +1,6 @@
 import express from 'express';
 import { ProjectTeam, TeamMember, ProjectTeamMessage, WeeklyLogbook, User } from '../models/index.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
 import { checkLogbookPlagiarism } from '../services/plagiarismChecker.js';
 
@@ -12,6 +12,7 @@ const formatTeam = async (team, req) => {
   if (!team) return null;
   const members = await TeamMember.findAll({
     where: { team_id: team.id },
+    include: [{ model: User, as: 'studentUser' }],
   });
 
   const advisor = team.assigned_advisor_id ? await User.findByPk(team.assigned_advisor_id) : null;
@@ -33,22 +34,25 @@ const formatTeam = async (team, req) => {
     srs_feedback: team.srs_feedback || '',
     srs_revision_deadline: team.srs_revision_deadline,
     coding_unlocked: Boolean(team.srs_status === 'APPROVED'),
-    members: members.map(m => ({
-      id: m.id,
-      student: {
-        id: m.student_id,
-        user: {
-          id: req.user.id,
-          first_name: req.user.first_name || '',
-          last_name: req.user.last_name || '',
-          email: req.user.email || '',
+    members: members.map(m => {
+      const u = m.studentUser || req.user;
+      return {
+        id: m.id,
+        student: {
+          id: m.student_id,
+          user: {
+            id: u?.id || req.user.id,
+            first_name: u?.first_name || '',
+            last_name: u?.last_name || '',
+            email: u?.email || '',
+          },
+          department: u?.department || 'Software Engineering',
+          primary_skill: 'React / Node.js',
         },
-        department: req.user.department || 'Software Engineering',
-        primary_skill: 'React / Node.js',
-      },
-      assigned_role: m.assigned_role,
-      primary_stack: 'React / Node.js',
-    })),
+        assigned_role: m.assigned_role,
+        primary_stack: 'React / Node.js',
+      };
+    }),
     created_at: team.created_at,
   };
 };
@@ -58,31 +62,18 @@ const formatTeam = async (team, req) => {
 // -------------------------------------------------------------
 router.get('/my-channel/', requireAuth, async (req, res) => {
   try {
-    let studentProfileId = null;
-    if (req.user.role === 'student') {
-      const studentIdNumber = req.user.staff_id_number || `UGR/${req.user.id.slice(0, 5)}/16`;
-      const p = await sequelize.query(
-        `INSERT INTO accounts_studentprofile (user_id, student_id_number, university_name, campus_city, department, academic_year, bio, skill_tags, is_active_for_internship, created_at, updated_at)
-         VALUES ($1, $2, 'Addis Ababa University', 'Addis Ababa', 'Software Engineering', 4, '', '[]', true, NOW(), NOW())
-         ON CONFLICT (user_id) DO UPDATE SET updated_at = NOW()
-         RETURNING id;`,
-        { bind: [req.user.id, studentIdNumber], type: sequelize.QueryTypes.SELECT }
-      );
-      studentProfileId = p[0].id;
-    }
-
-    let member = studentProfileId ? await TeamMember.findOne({ where: { student_id: studentProfileId } }) : null;
     let team = null;
-
-    if (member) {
-      team = await ProjectTeam.findByPk(member.team_id);
+    if (req.user.role === 'student') {
+      const member = await TeamMember.findOne({ where: { student_id: req.user.id } });
+      if (member) {
+        team = await ProjectTeam.findByPk(member.team_id);
+      }
     } else if (req.user.role === 'advisor') {
       team = await ProjectTeam.findOne({ where: { assigned_advisor_id: req.user.id } });
     }
 
     if (!team) {
-      const cohortRows = await sequelize.query(`SELECT id FROM universities_inhousecohort LIMIT 1;`, { type: sequelize.QueryTypes.SELECT });
-      const cohortId = cohortRows[0]?.id || '033d8b4d-e23c-40f1-915a-b1a8ef907655';
+      const cohortId = '033d8b4d-e23c-40f1-915a-b1a8ef907655';
 
       [team] = await ProjectTeam.findOrCreate({
         where: { team_name: 'Campus Software House Team 1' },
@@ -95,12 +86,12 @@ router.get('/my-channel/', requireAuth, async (req, res) => {
         }
       });
 
-      if (studentProfileId) {
+      if (req.user.role === 'student') {
         await TeamMember.findOrCreate({
-          where: { team_id: team.id, student_id: studentProfileId },
+          where: { team_id: team.id, student_id: req.user.id },
           defaults: {
             team_id: team.id,
-            student_id: studentProfileId,
+            student_id: req.user.id,
             assigned_role: 'Full Stack Engineer',
             is_leader: false
           }
@@ -164,7 +155,7 @@ router.post('/teams/:teamId/srs/upload/', requireAuth, upload.single('srs_docume
 // -------------------------------------------------------------
 // POST /v1/projects/teams/:teamId/srs/review/
 // -------------------------------------------------------------
-router.post('/teams/:teamId/srs/review/', requireAuth, async (req, res) => {
+router.post('/teams/:teamId/srs/review/', requireAuth, requireRole('advisor', 'admin'), async (req, res) => {
   try {
     const team = await ProjectTeam.findByPk(req.params.teamId);
     if (!team) return res.status(404).json({ detail: 'Team not found.' });

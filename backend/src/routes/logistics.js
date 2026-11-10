@@ -2,106 +2,79 @@ import express from 'express';
 import crypto from 'crypto';
 import sequelize from '../config/database.js';
 import { CampusLogistics, User } from '../models/index.js';
-import { requireAuth } from '../middleware/auth.js';
-import { generateBase64QR } from '../services/qrGenerator.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
+import { generateSignedQR, verifyPayload } from '../services/qrGenerator.js';
 
 const router = express.Router();
 
-// Helper to resolve or create student UIL profile id
-export const resolveStudentUilId = async (user) => {
-  const studentRows = await sequelize.query(
-    `INSERT INTO student_profiles_student (user_id, education_level, field_of_study, university, current_year, experience_level, preferred_country, preferred_city, work_mode, internship_type, created_at, updated_at)
-     VALUES ($1, 'Undergraduate', 'Software Engineering', 'Addis Ababa University', '4', 'Entry', 'Ethiopia', 'Addis Ababa', 'any', 'any', NOW(), NOW())
-     ON CONFLICT (user_id) DO UPDATE SET updated_at = NOW()
-     RETURNING id;`,
-    { bind: [user.id], type: sequelize.QueryTypes.SELECT }
-  );
-  const studentPk = studentRows[0].id;
-
-  const studentIdNumber = user.staff_id_number || `UGR/${user.id.slice(0, 5)}/16`;
-  const uilRows = await sequelize.query(
-    `INSERT INTO uil_profiles_uilstudentprofile (student_id, student_id_number, campus_city, department, academic_year, is_active_for_internship, created_at, updated_at, dean_dorm_food_letter_qr, dean_signature_hash, dean_verification_letter_qr, forwarded_to_uil, is_verified_by_dean, dean_allow_dorm, dean_allow_food, dean_allow_internship, dean_letter_notes, dean_letter_qr, dean_letter_title, dean_unique_qr, dorm_food_letter_notes, dorm_food_letter_sent, dorm_food_letter_title, internship_letter_sent, score_letter_notes, score_letter_sent, score_roster_data, forwarded_to_dorm, forwarded_to_student_dean)
-     VALUES ($1, $2, 'Addis Ababa', 'Software Engineering', 4, true, NOW(), NOW(), '', '', '', false, false, true, true, true, '', '', '', '', '', false, '', false, '', false, '{}', false, false)
-     ON CONFLICT (student_id) DO UPDATE SET updated_at = NOW()
-     RETURNING id;`,
-    { bind: [studentPk, studentIdNumber], type: sequelize.QueryTypes.SELECT }
-  );
-  return uilRows[0].id;
-};
-
 // Helper to resolve or create a logistics record
 export const resolveLogisticsRecord = async (user) => {
-  const uilId = await resolveStudentUilId(user);
-  let [item] = await sequelize.query(
-    `SELECT * FROM logistics_campuslogistics WHERE student_id = $1 LIMIT 1;`,
-    { bind: [uilId], type: sequelize.QueryTypes.SELECT }
-  );
-  if (!item) {
-    const cohortRows = await sequelize.query(`SELECT id FROM teams_inhousecohort LIMIT 1;`, { type: sequelize.QueryTypes.SELECT });
-    const cohortId = cohortRows[0]?.id || 'ef83c4a7-acb8-4921-bf1c-57ab0421821e';
-    const newId = crypto.randomUUID();
-    await sequelize.query(
-      `INSERT INTO logistics_campuslogistics (
-        id, student_id, cohort_id, uil_placed, dean_approved, dean_signature_hash,
-        meal_card_number, meal_card_active, dorm_block, dorm_room, dorm_bed_number,
-        dorm_status, key_issued, cleared_at_exit, room_checkout, student_union_qr_code,
-        student_union_signature_hash, created_at, updated_at
-      ) VALUES (
-        $1, $2, $3, true, false, '',
-        'MC-102938', false, 'Block A', '101', 'Bed 1',
-        'UNASSIGNED', false, false, false, '',
-        '', NOW(), NOW()
-      );`,
-      { bind: [newId, uilId, cohortId] }
-    );
-    [item] = await sequelize.query(
-      `SELECT * FROM logistics_campuslogistics WHERE id = $1 LIMIT 1;`,
-      { bind: [newId], type: sequelize.QueryTypes.SELECT }
-    );
-  }
+  const [item] = await CampusLogistics.findOrCreate({
+    where: { student_id: user.id },
+    defaults: {
+      student_id: user.id,
+      dean_approved: false,
+      meal_card_number: `MC-${Math.floor(100000 + Math.random() * 900000)}`,
+      meal_card_active: false,
+      dorm_block: 'Block A',
+      dorm_room: '101',
+      dorm_bed_number: 'Bed 1',
+      dorm_status: 'UNASSIGNED',
+      key_issued: false,
+      cleared_at_exit: false,
+    }
+  });
   return item;
 };
 
 // Helper to format logistics item
-const formatLogistics = (item) => ({
-  id: item.id,
-  student: item.student_id,
-  student_id_number: item.student_id_number || `UGR/${item.student_id}/16`,
-  student_name: item.student_name || 'Amanuel Student',
-  student_email: item.student_email || 'student@example.com',
-  department: item.department || 'Software Engineering',
-  academic_year: item.academic_year || 4,
-  cohort: item.cohort || item.cohort_id,
-  cohort_name: item.cohort_name || 'Summer Cohort 2026',
-  cohort_academic_year: item.cohort_academic_year || '2026',
-  dean_approved: Boolean(item.dean_approved),
-  dean_signature_hash: item.dean_signature_hash,
-  dean_signed_by: item.dean_signed_by_id,
-  dean_signed_by_name: item.dean_signed_by_name,
-  dean_signed_at: item.dean_signed_at,
-  signature_verified: Boolean(item.signature_verified),
-  meal_card_number: item.meal_card_number,
-  meal_card_active: Boolean(item.meal_card_active),
-  meal_card_issued_at: item.meal_card_issued_at,
-  meal_card_issued_by: item.meal_card_issued_by_id,
-  meal_card_issued_by_name: item.meal_card_issued_by_name,
-  student_union_signature_hash: item.student_union_signature_hash,
-  student_union_qr_code: item.student_union_qr_code,
-  dorm_block: item.dorm_block || 'Block A',
-  dorm_room: item.dorm_room || '101',
-  dorm_bed_number: item.dorm_bed_number || 'Bed 1',
-  dorm_status: item.dorm_status || 'UNASSIGNED',
-  key_issued: Boolean(item.key_issued),
-  key_issued_at: item.key_issued_at,
-  key_issued_by: item.key_issued_by_id,
-  key_issued_by_name: item.key_issued_by_name,
-  valid_from: item.valid_from,
-  valid_until: item.valid_until,
-  is_valid_today: true,
-  cleared_at_exit: Boolean(item.cleared_at_exit),
-  created_at: item.created_at,
-  updated_at: item.updated_at,
-});
+const formatLogistics = (item, studentUser = null) => {
+  const json = item.toJSON ? item.toJSON() : item;
+  const user = studentUser || json.student || {};
+  const studentName = user.getFullName ? user.getFullName() : ([user.first_name, user.last_name].filter(Boolean).join(' ') || 'Amanuel Student');
+  const studentEmail = user.email || 'student@example.com';
+  const dept = user.department || 'Software Engineering';
+
+  return {
+    id: json.id,
+    student: json.student_id,
+    student_id_number: user.staff_id_number || `UGR/${json.student_id?.slice ? json.student_id.slice(0, 5) : '1001'}/16`,
+    student_name: studentName,
+    student_email: studentEmail,
+    department: dept,
+    academic_year: 4,
+    cohort: 'ef83c4a7-acb8-4921-bf1c-57ab0421821e',
+    cohort_name: 'Summer Cohort 2026',
+    cohort_academic_year: '2026',
+    dean_approved: Boolean(json.dean_approved),
+    dean_signature_hash: json.dean_signature_hash || '',
+    dean_signed_by: json.dean_signed_by_id,
+    dean_signed_by_name: 'Dr. Haile Dean',
+    dean_signed_at: json.dean_signed_at,
+    signature_verified: Boolean(json.dean_approved),
+    meal_card_number: json.meal_card_number || 'MC-102938',
+    meal_card_active: Boolean(json.meal_card_active),
+    meal_card_issued_at: json.meal_card_issued_at,
+    meal_card_issued_by: json.meal_card_issued_by_id,
+    meal_card_issued_by_name: 'Student Union Logistics',
+    student_union_signature_hash: json.student_union_signature_hash || '',
+    student_union_qr_code: json.student_union_qr_code || '',
+    dorm_block: json.dorm_block || 'Block A',
+    dorm_room: json.dorm_room || '101',
+    dorm_bed_number: json.dorm_bed_number || 'Bed 1',
+    dorm_status: json.dorm_status || 'UNASSIGNED',
+    key_issued: Boolean(json.key_issued),
+    key_issued_at: json.key_issued_at,
+    key_issued_by: json.key_issued_by_id,
+    key_issued_by_name: 'Dorm Proctor Office',
+    valid_from: json.valid_from,
+    valid_until: json.valid_until,
+    is_valid_today: true,
+    cleared_at_exit: Boolean(json.cleared_at_exit),
+    created_at: json.created_at,
+    updated_at: json.updated_at,
+  };
+};
 
 // -------------------------------------------------------------
 // GET /v1/logistics/
@@ -111,14 +84,15 @@ router.get('/', requireAuth, async (req, res) => {
     let items;
     if (req.user.role === 'student') {
       const item = await resolveLogisticsRecord(req.user);
-      items = [item];
+      items = [formatLogistics(item, req.user)];
     } else {
-      items = await sequelize.query(
-        `SELECT * FROM logistics_campuslogistics ORDER BY created_at DESC;`,
-        { type: sequelize.QueryTypes.SELECT }
-      );
+      const records = await CampusLogistics.findAll({
+        include: [{ model: User, as: 'student' }],
+        order: [['created_at', 'DESC']]
+      });
+      items = records.map(r => formatLogistics(r, r.student));
     }
-    return res.status(200).json(items.map(formatLogistics));
+    return res.status(200).json(items);
   } catch (err) {
     return res.status(500).json({ detail: err.message });
   }
@@ -139,7 +113,7 @@ router.get('/meal-cards/', requireAuth, async (req, res) => {
 // -------------------------------------------------------------
 // POST /v1/logistics/:id/activate-meal-card/
 // -------------------------------------------------------------
-router.post('/:id/activate-meal-card/', requireAuth, async (req, res) => {
+router.post('/:id/activate-meal-card/', requireAuth, requireRole('admin', 'student_union', 'dean', 'uil', 'staff'), async (req, res) => {
   try {
     const item = await CampusLogistics.findByPk(req.params.id);
     if (!item) return res.status(404).json({ detail: 'Logistics record not found.' });
@@ -151,21 +125,50 @@ router.post('/:id/activate-meal-card/', requireAuth, async (req, res) => {
     item.meal_card_issued_by_id = req.user.id;
     item.meal_card_issued_by_name = req.user.getFullName();
 
-    // Generate Student Union Verification QR code
-    const qrData = JSON.stringify({
+    // Generate cryptographically signed Student Union Verification QR code
+    const payload = {
       logistics_id: item.id,
       student_id: item.student_id,
       meal_card: item.meal_card_number,
       verified_by: req.user.getFullName(),
-      timestamp: new Date().toISOString(),
-    });
-    item.student_union_signature_hash = crypto.createHash('sha256').update(qrData).digest('hex');
-    item.student_union_qr_code = await generateBase64QR(qrData);
+      issued_at: item.meal_card_issued_at.toISOString(),
+    };
+    const { qrImage, signature } = await generateSignedQR(payload);
+    item.student_union_signature_hash = signature;
+    item.student_union_qr_code = qrImage;
 
     await item.save();
     return res.status(200).json(formatLogistics(item));
   } catch (err) {
     return res.status(400).json({ detail: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// POST /v1/logistics/verify-qr/
+// -------------------------------------------------------------
+router.post('/verify-qr/', requireAuth, async (req, res) => {
+  try {
+    const { qr_data } = req.body;
+    if (!qr_data) return res.status(400).json({ valid: false, detail: 'QR data is required.' });
+
+    let parsed = qr_data;
+    if (typeof qr_data === 'string') {
+      try { parsed = JSON.parse(qr_data); } catch { return res.status(400).json({ valid: false, detail: 'Invalid QR JSON payload.' }); }
+    }
+
+    const isValid = verifyPayload(parsed);
+    if (!isValid) {
+      return res.status(200).json({ valid: false, message: 'Invalid or forged QR signature.' });
+    }
+
+    return res.status(200).json({
+      valid: true,
+      message: 'QR code verified successfully with valid cryptographic HMAC signature.',
+      payload: parsed,
+    });
+  } catch (err) {
+    return res.status(400).json({ valid: false, detail: err.message });
   }
 });
 

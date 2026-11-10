@@ -1,5 +1,6 @@
 import express from 'express';
 import { Op } from 'sequelize';
+import sequelize from '../config/database.js';
 import {
   Internship,
   SavedInternship,
@@ -31,22 +32,23 @@ router.get('/', async (req, res) => {
   try {
     const { search, internship_type, work_type, compensation_type, category, city, country } = req.query;
     const { limit, offset } = getPaginationParams(req, 20);
+    const likeOp = sequelize.getDialect() === 'postgres' ? Op.iLike : Op.like;
 
     const where = { status: 'active' };
 
     if (internship_type) where.internship_type = internship_type;
     if (work_type) where.work_type = work_type;
     if (compensation_type) where.compensation_type = compensation_type;
-    if (category) where.category = { [Op.like]: `%${category}%` };
-    if (city) where.city = { [Op.like]: `%${city}%` };
-    if (country) where.country = { [Op.like]: `%${country}%` };
+    if (category) where.category = { [likeOp]: `%${category}%` };
+    if (city) where.city = { [likeOp]: `%${city}%` };
+    if (country) where.country = { [likeOp]: `%${country}%` };
 
     if (search) {
       where[Op.or] = [
-        { title: { [Op.like]: `%${search}%` } },
-        { organization_name: { [Op.like]: `%${search}%` } },
-        { description: { [Op.like]: `%${search}%` } },
-        { category: { [Op.like]: `%${search}%` } },
+        { title: { [likeOp]: `%${search}%` } },
+        { organization_name: { [likeOp]: `%${search}%` } },
+        { description: { [likeOp]: `%${search}%` } },
+        { category: { [likeOp]: `%${search}%` } },
       ];
     }
 

@@ -6,6 +6,18 @@ import { paginate } from '../utils/pagination.js';
 
 const router = express.Router();
 
+// High-performance recommendation cache (30-minute TTL per student)
+const recommendationCache = new Map();
+const CACHE_TTL_MS = 30 * 60 * 1000;
+
+export const invalidateRecommendationCache = (studentId = null) => {
+  if (studentId) {
+    recommendationCache.delete(studentId);
+  } else {
+    recommendationCache.clear();
+  }
+};
+
 // -------------------------------------------------------------
 // GET /api/recommendations/ — Personalised AI Recommendations
 // -------------------------------------------------------------
@@ -26,19 +38,41 @@ router.get('/', requireAuth, async (req, res) => {
       });
     }
 
-    // Active internships
-    const internships = await Internship.findAll({
-      where: { status: 'active' }, include: [{ model: Skill, as: 'skills' }],
-      limit: 100,
-    });
+    // Cache key incorporates student profile state, skills count, and internships count
+    const activeInternshipCount = await Internship.count({ where: { status: 'active' } });
+    const profileTimestamp = profile?.updated_at ? new Date(profile.updated_at).getTime() : 0;
+    const skillsFingerprint = studentSkillNames.slice().sort().join(',');
+    const cacheKey = `${profileTimestamp}_${skillsFingerprint}_${activeInternshipCount}`;
 
-    // Score each internship
-    const scoredList = internships.map(internship => {
-      return scoreInternship(internship, profile, studentSkillNames);
-    });
+    let scoredList;
+    let fromCache = false;
 
-    // Sort descending by match_score
-    scoredList.sort((a, b) => b.match_score - a.match_score);
+    const cached = recommendationCache.get(req.user.id);
+    if (cached && cached.key === cacheKey && Date.now() < cached.expiresAt) {
+      scoredList = cached.data;
+      fromCache = true;
+    } else {
+      // Active internships
+      const internships = await Internship.findAll({
+        where: { status: 'active' },
+        include: [{ model: Skill, as: 'skills' }],
+        limit: 100,
+      });
+
+      // Score each internship
+      scoredList = internships.map(internship => {
+        return scoreInternship(internship, profile, studentSkillNames);
+      });
+
+      // Sort descending by match_score
+      scoredList.sort((a, b) => b.match_score - a.match_score);
+
+      recommendationCache.set(req.user.id, {
+        key: cacheKey,
+        data: scoredList,
+        expiresAt: Date.now() + CACHE_TTL_MS,
+      });
+    }
 
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const pageSize = Math.min(100, Math.max(1, parseInt(req.query.page_size, 10) || 20));
@@ -77,7 +111,7 @@ router.get('/', requireAuth, async (req, res) => {
         education_level: profile?.education_level || 'Undergraduate',
       },
       scoring_metadata: {
-        from_cache: false,
+        from_cache: fromCache,
         cache_ttl_seconds: 1800,
         weights: {
           semantic: '40%',
@@ -103,7 +137,7 @@ router.get('/history/', requireAuth, async (req, res) => {
     const offset = (page - 1) * pageSize;
 
     const { count, rows } = await Recommendation.findAndCountAll({
-      where: { user_id: req.user.id },
+      where: { student_id: req.user.id },
       include: [{ model: Internship, as: 'internship' }],
       limit: pageSize,
       offset,
@@ -115,7 +149,7 @@ router.get('/history/', requireAuth, async (req, res) => {
       internship: r.internship_id,
       internship_title: r.internship?.title || '',
       organization_name: r.internship?.organization_name || '',
-      overall_score: r.match_score,
+      overall_score: r.overall_score !== undefined ? r.overall_score : r.match_score,
       semantic_score: r.semantic_score,
       skill_score: r.skill_score,
       preference_score: r.preference_score,
@@ -143,6 +177,22 @@ router.get('/history/', requireAuth, async (req, res) => {
 router.post('/:id/feedback/', requireAuth, async (req, res) => {
   try {
     const { action } = req.body;
+    const rec = await Recommendation.findOne({
+      where: { id: req.params.id, student_id: req.user.id }
+    });
+
+    if (rec) {
+      const now = new Date();
+      if (action === 'viewed') rec.viewed_at = now;
+      if (action === 'saved') rec.saved_at = now;
+      if (action === 'applied') rec.applied_at = now;
+      if (action === 'ignored' || action === 'dismissed') {
+        rec.ignored_at = now;
+        rec.status = 'ignored';
+      }
+      await rec.save();
+    }
+
     return res.status(200).json({ message: 'Feedback recorded successfully.', status: action || 'viewed' });
   } catch (err) {
     return res.status(400).json({ detail: err.message });

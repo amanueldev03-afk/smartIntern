@@ -12,7 +12,8 @@ const router = express.Router();
 // -------------------------------------------------------------
 router.post('/register/', async (req, res) => {
   try {
-    const result = await registerStudent(req.body);
+    const { email, password, username, full_name } = req.body;
+    const result = await registerStudent({ email, password, username, full_name });
     return res.status(201).json(result);
   } catch (err) {
     return res.status(err.status || 400).json({ detail: err.message || 'Registration failed.' });

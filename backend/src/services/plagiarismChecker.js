@@ -1,4 +1,5 @@
-import sequelize from '../config/database.js';
+import { Op } from 'sequelize';
+import { WeeklyLogbook } from '../models/index.js';
 
 const STOP_WORDS = new Set([
   'a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are', 'aren', 'arent',
@@ -112,30 +113,33 @@ export async function checkLogbookPlagiarism(newText, studentId, weekNumber = nu
     };
   }
 
-  // Query historical logbooks
+  // Query historical logbooks (capped to recent 500 approved logbooks)
   let corpus = [];
   try {
-    let query = `
-      SELECT id, tasks_executed
-      FROM projects_weeklylogbook
-      WHERE advisor_approved = true
-    `;
-    const replacements = [];
+    const where = { advisor_approved: true };
+    const andConditions = [];
 
     if (logbookId) {
-      replacements.push(logbookId);
-      query += ` AND id != $${replacements.length}`;
+      andConditions.push({ id: { [Op.ne]: logbookId } });
     }
 
     if (studentId && weekNumber !== null && weekNumber !== undefined) {
-      replacements.push(studentId);
-      replacements.push(weekNumber);
-      query += ` AND NOT (student_id = $${replacements.length - 1} AND week_number = $${replacements.length})`;
+      andConditions.push({
+        [Op.not]: {
+          [Op.and]: [{ student_id: studentId }, { week_number: weekNumber }]
+        }
+      });
     }
 
-    const rows = await sequelize.query(query, {
-      bind: replacements,
-      type: sequelize.QueryTypes.SELECT,
+    if (andConditions.length > 0) {
+      where[Op.and] = andConditions;
+    }
+
+    const rows = await WeeklyLogbook.findAll({
+      where,
+      attributes: ['id', 'tasks_executed'],
+      order: [['created_at', 'DESC']],
+      limit: 500,
     });
 
     for (const row of rows) {

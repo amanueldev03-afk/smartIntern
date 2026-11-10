@@ -5,7 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { Op } from 'sequelize';
 
-import { PORT, MEDIA_ROOT } from './src/config/env.js';
+import { PORT, MEDIA_ROOT, CORS_ALLOWED_ORIGINS, DEBUG } from './src/config/env.js';
 import sequelize, { connectDB } from './src/config/database.js';
 import models, { User, Skill, CareerInterest, Internship, DataSource } from './src/models/index.js';
 import { hashPassword } from './src/services/authService.js';
@@ -28,8 +28,21 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // Middleware
+const allowedOrigins = new Set(CORS_ALLOWED_ORIGINS || []);
 app.use(cors({
-  origin: '*',
+  origin: (origin, callback) => {
+    // Allow non-browser requests (mobile apps, server-to-server, curl)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.has(origin) || allowedOrigins.has('*')) {
+      return callback(null, true);
+    }
+    // Allow localhost/127.0.0.1 in debug mode
+    if (DEBUG && (/^http:\/\/localhost(:\d+)?$/.test(origin) || /^http:\/\/127\.0\.0\.1(:\d+)?$/.test(origin))) {
+      return callback(null, true);
+    }
+    return callback(new Error(`Origin ${origin} is not allowed by CORS`));
+  },
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept-Language'],
 }));

@@ -32,7 +32,43 @@ const storage = multer.diskStorage({
   }
 });
 
+const ALLOWED_DOC_EXTS = new Set(['.pdf', '.docx', '.doc']);
+const ALLOWED_IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const ALLOWED_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+const fileFilter = (req, file, cb) => {
+  const ext = path.extname(file.originalname).toLowerCase();
+  const mime = (file.mimetype || '').toLowerCase();
+
+  // Block dangerous executable/script extensions
+  const dangerousExts = ['.html', '.htm', '.xhtml', '.svg', '.xml', '.exe', '.sh', '.bat', '.js', '.mjs', '.php', '.phtml', '.py'];
+  if (dangerousExts.includes(ext)) {
+    return cb(new Error(`File type ${ext} is not permitted for security reasons.`));
+  }
+
+  if (file.fieldname === 'profile_photo') {
+    if (ALLOWED_IMAGE_EXTS.has(ext) && (ALLOWED_IMAGE_MIMES.has(mime) || !mime)) {
+      return cb(null, true);
+    }
+    return cb(new Error('Invalid profile photo format. Allowed formats: JPG, JPEG, PNG, WEBP.'));
+  }
+
+  if (file.fieldname === 'resume' || file.fieldname === 'cv' || file.fieldname === 'file' || file.fieldname === 'srs_document') {
+    if (ALLOWED_DOC_EXTS.has(ext)) {
+      return cb(null, true);
+    }
+    return cb(new Error('Invalid document format. Allowed formats: PDF (.pdf), Word (.docx).'));
+  }
+
+  if (ALLOWED_DOC_EXTS.has(ext) || ALLOWED_IMAGE_EXTS.has(ext)) {
+    return cb(null, true);
+  }
+
+  return cb(new Error(`Unsupported file format (${ext}). Only standard documents and images are permitted.`));
+};
+
 export const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter,
 });

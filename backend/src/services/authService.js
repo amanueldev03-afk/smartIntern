@@ -81,24 +81,6 @@ export const authenticateUser = async (identifier, password) => {
     }
   });
 
-  // 2. Special auto-provisioning for admin1 / Admin@1234
-  if (!user && (cleanId.toLowerCase() === 'admin1' || cleanId.toLowerCase() === 'admin') && password === 'Admin@1234') {
-    const hashedPassword = await hashPassword('Admin@1234');
-    user = await User.create({
-      email: 'admin1@smartintern.et',
-      username: 'admin1',
-      password: hashedPassword,
-      first_name: 'System',
-      last_name: 'Admin',
-      role: 'admin',
-      is_staff: true,
-      is_superuser: true,
-      is_active: true,
-      is_email_verified: true,
-      is_approved: true,
-    });
-  }
-
   if (!user) {
     throw { status: 401, message: 'Invalid email or password.' };
   }
@@ -173,8 +155,9 @@ export const registerStudent = async (data) => {
   const lastName = nameParts.slice(1).join(' ') || '';
 
   const hashedPassword = await hashPassword(password);
-  const normalizedRole = (role || 'student').toLowerCase();
-  const isAdmin = normalizedRole === 'admin';
+  // Security: Public self-registration is strictly restricted to 'student'.
+  // Administrative and staff roles must be provisioned internally.
+  const normalizedRole = 'student';
 
   const user = await User.create({
     email: email.toLowerCase(),
@@ -186,26 +169,18 @@ export const registerStudent = async (data) => {
     is_active: true,
     is_email_verified: true,
     is_approved: true,
-    is_staff: isAdmin,
-    is_superuser: isAdmin,
+    is_staff: false,
+    is_superuser: false,
   });
 
-  // Automatically create a StudentProfile if student
-  if (normalizedRole === 'student') {
-    await StudentProfile.findOrCreate({
-      where: { user_id: user.id },
-      defaults: { user_id: user.id }
-    });
-  }
+  // Automatically create a StudentProfile
+  await StudentProfile.findOrCreate({
+    where: { user_id: user.id },
+    defaults: { user_id: user.id }
+  });
 
   const tokens = generateTokens(user);
-  const roleStr = normalizedRole.toUpperCase();
-  let message = 'Registration successful. Please check your email to verify your account.';
-  if (isAdmin) {
-    message = 'Administrator account registered successfully. You can now log in.';
-  } else if (roleStr === 'ADVISOR') {
-    message = 'Registration successful. Please verify your email. Note: Your academic advisor account requires UIL Officer approval before sign-in.';
-  }
+  const message = 'Registration successful. Welcome to SmartIntern-ET!';
 
   return {
     message,

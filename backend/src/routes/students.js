@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
 import { computeProfileCompletion } from '../services/profileCompletion.js';
 import { validateResumeFile, extractTextFromFile, extractCVData } from '../services/cvExtractor.js';
+import { invalidateRecommendationCache } from './recommendations.js';
 
 const router = express.Router();
 
@@ -67,6 +68,7 @@ router.patch('/me/', requireAuth, async (req, res) => {
     });
 
     await profile.save();
+    invalidateRecommendationCache(req.user.id);
 
     const skills = await profile.getSkills();
     const interests = await profile.getInterests();
@@ -131,6 +133,7 @@ router.patch('/me/preferences/', requireAuth, async (req, res) => {
     if (availability_immediately !== undefined) profile.availability_immediately = Boolean(availability_immediately);
 
     await profile.save();
+    invalidateRecommendationCache(req.user.id);
 
     return res.status(200).json({
       country: profile.country,
@@ -177,6 +180,7 @@ router.post('/me/skills/', requireAuth, async (req, res) => {
 
     if (skill) {
       await profile.addSkill(skill);
+      invalidateRecommendationCache(req.user.id);
       return res.status(201).json(skill);
     }
     return res.status(400).json({ detail: 'Skill not provided or could not be created.' });
@@ -191,8 +195,9 @@ router.delete('/me/skills/', requireAuth, async (req, res) => {
     const skillId = req.body.skill_id;
     if (skillId) {
       await StudentSkill.destroy({
-        where: { student_profile_id: profile.id, skill_id: skillId }
+        where: { student_id: profile.id, skill_id: skillId }
       });
+      invalidateRecommendationCache(req.user.id);
     }
     return res.status(204).send();
   } catch (err) {
@@ -257,7 +262,7 @@ router.delete('/me/interests/', requireAuth, async (req, res) => {
     const interestId = req.body.interest_id;
     if (interestId) {
       await StudentInterest.destroy({
-        where: { student_profile_id: profile.id, interest_id: interestId }
+        where: { student_id: profile.id, interest_id: interestId }
       });
     }
     return res.status(204).send();
@@ -331,6 +336,7 @@ const handleResumeUpload = async (req, res) => {
             await profile.addSkill(sk);
           }
         }
+        invalidateRecommendationCache(req.user.id);
       } catch (err) {
         console.error('CV Background processing error:', err);
         cv.processing_status = 'FAILED';
@@ -413,6 +419,13 @@ router.get('/cv/:id/status/', requireAuth, async (req, res) => {
   try {
     const cv = await CV.findByPk(req.params.id);
     if (!cv) return res.status(404).json({ detail: 'CV not found.' });
+
+    // Security: Enforce ownership check (IDOR mitigation)
+    const isOwner = String(cv.student_id) === String(req.user.id);
+    const isPrivileged = req.user.role === 'admin' || req.user.is_staff || req.user.is_superuser;
+    if (!isOwner && !isPrivileged) {
+      return res.status(403).json({ detail: 'You do not have permission to access this CV.' });
+    }
 
     return res.status(200).json({
       has_cv: true,

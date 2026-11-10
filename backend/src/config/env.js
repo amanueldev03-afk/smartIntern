@@ -12,9 +12,23 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 // Server & Core
 export const PORT = process.env.PORT || 8000;
 export const NODE_ENV = process.env.NODE_ENV || 'development';
-export const DEBUG = process.env.DEBUG === 'true' || process.env.DEBUG === 'True' || true;
+export const DEBUG = process.env.DEBUG !== undefined
+  ? (process.env.DEBUG === 'true' || process.env.DEBUG === 'True' || process.env.DEBUG === '1')
+  : (process.env.NODE_ENV !== 'production');
 export const SITE_BASE_URL = process.env.SITE_BASE_URL || 'http://localhost:8000';
 export const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+export const CORS_ALLOWED_ORIGINS = process.env.CORS_ALLOWED_ORIGINS
+  ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(s => s.trim())
+  : [
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      'http://localhost:8000',
+      'http://127.0.0.1:8000',
+      'http://localhost:3000',
+      'http://localhost',
+      process.env.FRONTEND_URL,
+      process.env.SITE_BASE_URL,
+    ].filter(Boolean);
 export const MEDIA_ROOT = path.resolve(__dirname, '../../media');
 
 // Database & Caching
@@ -61,6 +75,7 @@ export default {
   DEBUG,
   SITE_BASE_URL,
   FRONTEND_URL,
+  CORS_ALLOWED_ORIGINS,
   MEDIA_ROOT,
   DATABASE_URL,
   REDIS_URL,

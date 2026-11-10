@@ -15,6 +15,7 @@ router.get('/students/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { search, department, is_active } = req.query;
     const { limit, offset } = getPaginationParams(req, 20);
+    const likeOp = sequelize.getDialect() === 'postgres' ? Op.iLike : Op.like;
 
     const where = { role: 'student' };
     if (department) where.department = department;
@@ -22,10 +23,10 @@ router.get('/students/', requireAuth, requireAdmin, async (req, res) => {
 
     if (search) {
       where[Op.or] = [
-        { email: { [Op.like]: `%${search}%` } },
-        { first_name: { [Op.like]: `%${search}%` } },
-        { last_name: { [Op.like]: `%${search}%` } },
-        { username: { [Op.like]: `%${search}%` } },
+        { email: { [likeOp]: `%${search}%` } },
+        { first_name: { [likeOp]: `%${search}%` } },
+        { last_name: { [likeOp]: `%${search}%` } },
+        { username: { [likeOp]: `%${search}%` } },
       ];
     }
 
