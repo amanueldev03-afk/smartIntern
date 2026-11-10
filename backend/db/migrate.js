@@ -27,6 +27,7 @@ async function createMigrationTable() {
         version VARCHAR(255) PRIMARY KEY,
         executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+  `);
   } catch (error) {
     console.error('[Migration] Failed to create migration table:', error);
     throw error;
@@ -89,6 +90,32 @@ function loadMigrations() {
 }
 
 /**
+ * Acquire advisory lock to prevent concurrent migration execution
+ */
+async function acquireLock() {
+  // PostgreSQL advisory lock using a fixed lock ID (12345)
+  // This ensures only one migration runner operates at a time
+  const result = await sequelize.query(
+    'SELECT pg_try_advisory_lock(12345) as acquired'
+  );
+  const acquired = result[0][0].acquired;
+  
+  if (!acquired) {
+    throw new Error('Cannot acquire migration lock - another migration may be in progress');
+  }
+  
+  console.log('[Migration] Advisory lock acquired.');
+}
+
+/**
+ * Release advisory lock
+ */
+async function releaseLock() {
+  await sequelize.query('SELECT pg_advisory_unlock(12345)');
+  console.log('[Migration] Advisory lock released.');
+}
+
+/**
  * Run up migrations
  */
 async function up() {
@@ -97,28 +124,45 @@ async function up() {
   await connectDB();
   await createMigrationTable();
   
-  const executed = await getExecutedMigrations();
-  const migrations = loadMigrations();
+  // Acquire lock to prevent concurrent execution
+  await acquireLock();
   
-  for (const { file, module, version } of migrations) {
-    if (executed.includes(version)) {
-      console.log(`[Migration] Skipping already executed: ${version}`);
-      continue;
+  try {
+    const executed = await getExecutedMigrations();
+    const migrations = loadMigrations();
+    
+    for (const { file, module, version } of migrations) {
+      if (executed.includes(version)) {
+        console.log(`[Migration] Skipping already executed: ${version}`);
+        continue;
+      }
+      
+      console.log(`[Migration] Executing: ${version}`);
+      const migration = await module;
+      
+      if (typeof migration.up !== 'function') {
+        throw new Error(`Migration ${version} does not export an up() function`);
+      }
+      
+      // Execute migration in transaction
+      const transaction = await sequelize.transaction();
+      try {
+        await migration.up();
+        await markMigrationExecuted(version);
+        await transaction.commit();
+        console.log(`[Migration] Completed: ${version}`);
+      } catch (error) {
+        await transaction.rollback();
+        console.error(`[Migration] Failed: ${version}`, error);
+        throw error;
+      }
     }
     
-    console.log(`[Migration] Executing: ${version}`);
-    const migration = await module;
-    
-    if (typeof migration.up !== 'function') {
-      throw new Error(`Migration ${version} does not export an up() function`);
-    }
-    
-    await migration.up();
-    await markMigrationExecuted(version);
-    console.log(`[Migration] Completed: ${version}`);
+    console.log('[Migration] All up migrations completed.');
+  } finally {
+    // Always release lock
+    await releaseLock();
   }
-  
-  console.log('[Migration] All up migrations completed.');
 }
 
 /**
@@ -128,29 +172,47 @@ async function down() {
   console.log('[Migration] Running down migration (rollback last)...');
   
   await connectDB();
-  const executed = await getExecutedMigrations();
   
-  if (executed.length === 0) {
-    console.log('[Migration] No migrations to rollback.');
-    return;
+  // Acquire lock to prevent concurrent execution
+  await acquireLock();
+  
+  try {
+    const executed = await getExecutedMigrations();
+    
+    if (executed.length === 0) {
+      console.log('[Migration] No migrations to rollback.');
+      return;
+    }
+    
+    const lastVersion = executed[executed.length - 1];
+    const migrationFile = `${lastVersion}.js`;
+    const migrationPath = join(MIGRATIONS_DIR, migrationFile);
+    
+    console.log(`[Migration] Rolling back: ${lastVersion}`);
+    const migration = await import(migrationPath);
+    
+    if (typeof migration.down !== 'function') {
+      throw new Error(`Migration ${lastVersion} does not export a down() function`);
+    }
+    
+    // Execute rollback in transaction
+    const transaction = await sequelize.transaction();
+    try {
+      await migration.down();
+      await removeMigrationMark(lastVersion);
+      await transaction.commit();
+      console.log(`[Migration] Rolled back: ${lastVersion}`);
+    } catch (error) {
+      await transaction.rollback();
+      console.error(`[Migration] Rollback failed: ${lastVersion}`, error);
+      throw error;
+    }
+    
+    console.log('[Migration] Rollback completed.');
+  } finally {
+    // Always release lock
+    await releaseLock();
   }
-  
-  const lastVersion = executed[executed.length - 1];
-  const migrationFile = `${lastVersion}.js`;
-  const migrationPath = join(MIGRATIONS_DIR, migrationFile);
-  
-  console.log(`[Migration] Rolling back: ${lastVersion}`);
-  const migration = await import(migrationPath);
-  
-  if (typeof migration.down !== 'function') {
-    throw new Error(`Migration ${lastVersion} does not export a down() function`);
-  }
-  
-  await migration.down();
-  await removeMigrationMark(lastVersion);
-  console.log(`[Migration] Rolled back: ${lastVersion}`);
-  
-  console.log('[Migration] Rollback completed.');
 }
 
 /**
