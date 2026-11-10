@@ -50,7 +50,7 @@ export const StudentProfile = sequelize.define('StudentProfile', {
   date_of_birth: { type: DataTypes.DATEONLY, allowNull: true },
   bio: { type: DataTypes.TEXT, defaultValue: '' },
   education_level: { type: DataTypes.STRING, defaultValue: 'Undergraduate' },
-  current_year: { type: DataTypes.STRING, defaultValue: '4' },
+  current_year: { type: DataTypes.INTEGER, defaultValue: 4 },
   field_of_study: { type: DataTypes.STRING, defaultValue: 'Software Engineering' },
   university: { type: DataTypes.STRING, defaultValue: 'Addis Ababa University' },
   student_id_number: { type: DataTypes.STRING, defaultValue: '' },
@@ -213,7 +213,7 @@ export const CV = sequelize.define('CV', {
   extracted_projects: { type: DataTypes.JSONB, defaultValue: [] },
   extracted_certifications: { type: DataTypes.JSONB, defaultValue: [] },
   extracted_languages: { type: DataTypes.JSONB, defaultValue: [] },
-  extracted_experience_years: { type: DataTypes.FLOAT, defaultValue: 0 },
+  extracted_experience_years: { type: DataTypes.DECIMAL(4, 1), defaultValue: 0 },
   processed_at: { type: DataTypes.DATE, allowNull: true },
   uploaded_at: {
     type: DataTypes.VIRTUAL,
