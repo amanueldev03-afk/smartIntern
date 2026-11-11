@@ -7,7 +7,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node scripts/test_endpoints.js",
+    "test": "node --test tests/transactions.test.js tests/migrationValidation.test.js tests/indexingPerformance.test.js",
+    "test:transactions": "node --test tests/transactions.test.js && node scripts/run_task_1_18_postgres_tests.js",
+    "test:postgres": "node scripts/run_task_1_18_postgres_tests.js",
     "migrate": "node db/migrate.js up",
     "migrate:down": "node db/migrate.js down",
     "migrate:status": "node db/migrate.js status",

@@ -4,6 +4,7 @@ import { User, StudentProfile } from '../models/index.js';
 import { authenticateUser, registerStudent, hashPassword, comparePassword, generateTokens, verifyToken } from '../services/authService.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
+import { databaseErrorResponse } from '../utils/transactions.js';
 
 const router = express.Router();
 
@@ -16,7 +17,9 @@ router.post('/register/', async (req, res) => {
     const result = await registerStudent({ email, password, username, full_name });
     return res.status(201).json(result);
   } catch (err) {
-    return res.status(err.status || 400).json({ detail: err.message || 'Registration failed.' });
+    if (err.status) return res.status(err.status).json({ detail: err.message || 'Registration failed.' });
+    const mapped = databaseErrorResponse(err);
+    return res.status(mapped.status).json({ detail: mapped.status === 500 ? 'Registration could not be completed.' : mapped.detail });
   }
 });
 

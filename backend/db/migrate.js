@@ -7,27 +7,34 @@
 
 import sequelize from '../src/config/database.js';
 import { connectDB } from '../src/config/database.js';
-import { readFileSync, readdirSync } from 'fs';
-import { join, dirname } from 'path';
+import { readdirSync } from 'fs';
+import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { pathToFileURL } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const MIGRATIONS_DIR = join(__dirname, '../migrations');
+const configuredTestMigrationsDir = process.env.TASK_1_18_MIGRATIONS_DIR;
+if (configuredTestMigrationsDir && !process.env.TASK_1_18_TEST_SCHEMA) {
+  throw new Error('Alternate migration directories are permitted only in Task 1.18 schema tests.');
+}
+const MIGRATIONS_DIR = configuredTestMigrationsDir
+  ? resolve(configuredTestMigrationsDir)
+  : join(__dirname, '../migrations');
 const MIGRATION_TABLE = '_migrations';
 
 /**
  * Create migrations tracking table
  */
-async function createMigrationTable() {
+async function createMigrationTable(transaction) {
   try {
     await sequelize.query(`
       CREATE TABLE IF NOT EXISTS "${MIGRATION_TABLE}" (
         version VARCHAR(255) PRIMARY KEY,
         executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-  `);
+    `, { transaction });
   } catch (error) {
     console.error('[Migration] Failed to create migration table:', error);
     throw error;
@@ -37,10 +44,11 @@ async function createMigrationTable() {
 /**
  * Get executed migrations
  */
-async function getExecutedMigrations() {
+async function getExecutedMigrations(transaction) {
   try {
     const result = await sequelize.query(
-      `SELECT version FROM "${MIGRATION_TABLE}" ORDER BY executed_at ASC`
+      `SELECT version FROM "${MIGRATION_TABLE}" ORDER BY executed_at ASC`,
+      { transaction }
     );
     return result[0].map(row => row.version);
   } catch (error) {
@@ -54,20 +62,20 @@ async function getExecutedMigrations() {
 /**
  * Mark migration as executed
  */
-async function markMigrationExecuted(version) {
+async function markMigrationExecuted(version, transaction) {
   await sequelize.query(
     `INSERT INTO "${MIGRATION_TABLE}" (version) VALUES (:version)`,
-    { replacements: { version } }
+    { replacements: { version }, transaction }
   );
 }
 
 /**
  * Remove migration from executed list
  */
-async function removeMigrationMark(version) {
+async function removeMigrationMark(version, transaction) {
   await sequelize.query(
     `DELETE FROM "${MIGRATION_TABLE}" WHERE version = :version`,
-    { replacements: { version } }
+    { replacements: { version }, transaction }
   );
 }
 
@@ -77,7 +85,14 @@ async function removeMigrationMark(version) {
 function loadMigrations() {
   const files = readdirSync(MIGRATIONS_DIR)
     .filter(file => file.endsWith('.js') && !file.endsWith('.test.js'))
-    .sort(); // Execute in filename order (chronological)
+    .sort((left, right) => {
+      // The original schema and index migrations share a date prefix; plain
+      // lexical order incorrectly ran the indexes before their tables.
+      const initialSchema = '20241110_initial_schema.js';
+      if (left === initialSchema) return -1;
+      if (right === initialSchema) return 1;
+      return left.localeCompare(right);
+    });
   
   return files.map(file => {
     const migration = import(join(MIGRATIONS_DIR, file));
@@ -90,48 +105,38 @@ function loadMigrations() {
 }
 
 /**
- * Acquire advisory lock to prevent concurrent migration execution
+ * Keep the transaction-scoped advisory lock and every migration query on the
+ * same pooled connection. Each migration uses a nested Sequelize transaction
+ * (savepoint), while the outer transaction owns the lock for the full run.
  */
-async function acquireLock() {
-  // PostgreSQL advisory lock using a fixed lock ID (12345)
-  // This ensures only one migration runner operates at a time
-  const result = await sequelize.query(
-    'SELECT pg_try_advisory_lock(12345) as acquired'
-  );
-  const acquired = result[0][0].acquired;
-  
-  if (!acquired) {
-    throw new Error('Cannot acquire migration lock - another migration may be in progress');
-  }
-  
-  console.log('[Migration] Advisory lock acquired.');
-}
+async function withMigrationLock(work) {
+  return sequelize.transaction(async (lockTransaction) => {
+    await createMigrationTable(lockTransaction);
+    const [rows] = await sequelize.query(
+      'SELECT pg_try_advisory_xact_lock(12345) AS acquired',
+      { transaction: lockTransaction }
+    );
+    if (!rows[0].acquired) {
+      throw new Error('Cannot acquire migration lock - another migration may be in progress');
+    }
 
-/**
- * Release advisory lock
- */
-async function releaseLock() {
-  await sequelize.query('SELECT pg_advisory_unlock(12345)');
-  console.log('[Migration] Advisory lock released.');
+    console.log('[Migration] Transaction-scoped advisory lock acquired.');
+    return work(lockTransaction);
+  });
 }
 
 /**
  * Run up migrations
  */
-async function up() {
+export async function up() {
   console.log('[Migration] Running up migrations...');
   
   await connectDB();
-  await createMigrationTable();
-  
-  // Acquire lock to prevent concurrent execution
-  await acquireLock();
-  
-  try {
-    const executed = await getExecutedMigrations();
+  await withMigrationLock(async (lockTransaction) => {
+    const executed = await getExecutedMigrations(lockTransaction);
     const migrations = loadMigrations();
     
-    for (const { file, module, version } of migrations) {
+    for (const { module, version } of migrations) {
       if (executed.includes(version)) {
         console.log(`[Migration] Skipping already executed: ${version}`);
         continue;
@@ -145,10 +150,10 @@ async function up() {
       }
       
       // Execute migration in transaction
-      const transaction = await sequelize.transaction();
+      const transaction = await sequelize.transaction({ transaction: lockTransaction });
       try {
-        await migration.up();
-        await markMigrationExecuted(version);
+        await migration.up({ transaction });
+        await markMigrationExecuted(version, transaction);
         await transaction.commit();
         console.log(`[Migration] Completed: ${version}`);
       } catch (error) {
@@ -159,32 +164,30 @@ async function up() {
     }
     
     console.log('[Migration] All up migrations completed.');
-  } finally {
-    // Always release lock
-    await releaseLock();
-  }
+  });
 }
 
 /**
  * Run down migrations (rollback last migration)
  */
-async function down() {
+export async function down() {
   console.log('[Migration] Running down migration (rollback last)...');
   
   await connectDB();
   
-  // Acquire lock to prevent concurrent execution
-  await acquireLock();
-  
-  try {
-    const executed = await getExecutedMigrations();
+  await withMigrationLock(async (lockTransaction) => {
+    const executed = await getExecutedMigrations(lockTransaction);
     
     if (executed.length === 0) {
       console.log('[Migration] No migrations to rollback.');
       return;
     }
     
-    const lastVersion = executed[executed.length - 1];
+    const executionOrder = loadMigrations().map((migration) => migration.version);
+    const lastVersion = executionOrder.filter((version) => executed.includes(version)).at(-1);
+    if (!lastVersion) {
+      throw new Error('Executed migrations do not match the available migration files.');
+    }
     const migrationFile = `${lastVersion}.js`;
     const migrationPath = join(MIGRATIONS_DIR, migrationFile);
     
@@ -196,10 +199,10 @@ async function down() {
     }
     
     // Execute rollback in transaction
-    const transaction = await sequelize.transaction();
+    const transaction = await sequelize.transaction({ transaction: lockTransaction });
     try {
-      await migration.down();
-      await removeMigrationMark(lastVersion);
+      await migration.down({ transaction });
+      await removeMigrationMark(lastVersion, transaction);
       await transaction.commit();
       console.log(`[Migration] Rolled back: ${lastVersion}`);
     } catch (error) {
@@ -209,16 +212,13 @@ async function down() {
     }
     
     console.log('[Migration] Rollback completed.');
-  } finally {
-    // Always release lock
-    await releaseLock();
-  }
+  });
 }
 
 /**
  * Show migration status
  */
-async function status() {
+export async function status() {
   console.log('[Migration] Migration status:');
   
   await connectDB();
@@ -235,29 +235,22 @@ async function status() {
   pending.forEach(m => console.log(`  ○ ${m.version}`));
 }
 
-// CLI interface
-const command = process.argv[2] || 'up';
+// Keep imports side-effect free so tests and tooling can inspect the runner.
+const isDirectExecution = process.argv[1]
+  && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
 
-switch (command) {
-  case 'up':
-    up().then(() => process.exit(0)).catch(err => {
-      console.error('[Migration] Up failed:', err);
-      process.exit(1);
-    });
-    break;
-  case 'down':
-    down().then(() => process.exit(0)).catch(err => {
-      console.error('[Migration] Down failed:', err);
-      process.exit(1);
-    });
-    break;
-  case 'status':
-    status().then(() => process.exit(0)).catch(err => {
-      console.error('[Migration] Status failed:', err);
-      process.exit(1);
-    });
-    break;
-  default:
+if (isDirectExecution) {
+  const command = process.argv[2] || 'up';
+  const commands = { up, down, status };
+  const selectedCommand = commands[command];
+
+  if (!selectedCommand) {
     console.log('Usage: node db/migrate.js [up|down|status]');
     process.exit(1);
+  }
+
+  selectedCommand().then(() => process.exit(0)).catch((err) => {
+    console.error(`[Migration] ${command} failed:`, err);
+    process.exit(1);
+  });
 }

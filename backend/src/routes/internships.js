@@ -14,6 +14,7 @@ import {
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { paginate, getPaginationParams } from '../utils/pagination.js';
 import { normalizeListing, findExactDuplicate } from '../services/dataNormalizer.js';
+import { withTransaction, databaseErrorResponse } from '../utils/transactions.js';
 
 const router = express.Router();
 
@@ -234,18 +235,20 @@ router.get('/applications/', requireAuth, async (req, res) => {
 router.post('/applications/add/', requireAuth, async (req, res) => {
   try {
     const { internship_id, cover_letter } = req.body;
-    const [app] = await InternshipApplication.findOrCreate({
+    const [app] = await withTransaction((transaction) => InternshipApplication.findOrCreate({
       where: { student_id: req.user.id, internship_id: parseInt(internship_id, 10) },
       defaults: {
         student_id: req.user.id,
         internship_id: parseInt(internship_id, 10),
         notes: cover_letter || '',
         status: 'applied',
-      }
-    });
+      },
+      transaction,
+    }));
     return res.status(201).json(app);
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    const mapped = databaseErrorResponse(err);
+    return res.status(mapped.status).json({ detail: mapped.status === 500 ? 'Application could not be submitted.' : mapped.detail });
   }
 });
 

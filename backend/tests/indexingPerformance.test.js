@@ -36,7 +36,7 @@ describe('Task 1.17: Database Indexing and Query Performance Tests', () => {
     it('should add internship indexes', () => {
       const migrationFile = readFileSync(join(__dirname, '../migrations/20241110_add_performance_indexes.js'), 'utf8');
       
-      assert.ok(migrationFile.includes('internships_status_posted_at_idx'), 
+      assert.ok(migrationFile.includes('internships_status_created_at_idx'),
         'Should index status and posted_at for internship listings');
       assert.ok(migrationFile.includes('internships_city_idx'), 
         'Should index city for location filtering');
@@ -50,14 +50,14 @@ describe('Task 1.17: Database Indexing and Query Performance Tests', () => {
       const migrationFile = readFileSync(join(__dirname, '../migrations/20241110_add_performance_indexes.js'), 'utf8');
       
       // SavedInternship.student_id
-      assert.ok(migrationFile.includes('saved_internships_student_id_idx'));
+      assert.ok(migrationFile.includes('saved_internships_user_id_idx'));
       
       // InternshipApplication foreign keys
-      assert.ok(migrationFile.includes('internship_applications_student_id_idx'));
+      assert.ok(migrationFile.includes('internship_applications_user_id_idx'));
       assert.ok(migrationFile.includes('internship_applications_internship_id_idx'));
       
       // Recommendation foreign keys
-      assert.ok(migrationFile.includes('recommendations_student_id_idx'));
+      assert.ok(migrationFile.includes('recommendations_user_id_idx'));
       assert.ok(migrationFile.includes('recommendations_internship_id_idx'));
       
       // Notification foreign key
@@ -67,8 +67,8 @@ describe('Task 1.17: Database Indexing and Query Performance Tests', () => {
     it('should add composite indexes', () => {
       const migrationFile = readFileSync(join(__dirname, '../migrations/20241110_add_performance_indexes.js'), 'utf8');
       
-      // InternshipApplication: student_id + status
-      assert.ok(migrationFile.includes('internship_applications_student_id_status_idx'));
+      // InternshipApplication: user_id + status
+      assert.ok(migrationFile.includes('internship_applications_user_id_status_idx'));
       
       // Notification: user_id + is_read
       assert.ok(migrationFile.includes('notifications_user_id_is_read_idx'));
@@ -117,7 +117,7 @@ describe('Task 1.17: Database Indexing and Query Performance Tests', () => {
       const migrationFile = readFileSync(join(__dirname, '../migrations/20241110_add_performance_indexes.js'), 'utf8');
       
       // Internship listing filters by status, location, category, type
-      assert.ok(migrationFile.includes('internships_status_posted_at_idx'));
+      assert.ok(migrationFile.includes('internships_status_created_at_idx'));
       assert.ok(migrationFile.includes('internships_city_idx'));
       assert.ok(migrationFile.includes('internships_category_idx'));
     });
@@ -126,9 +126,9 @@ describe('Task 1.17: Database Indexing and Query Performance Tests', () => {
       const migrationFile = readFileSync(join(__dirname, '../migrations/20241110_add_performance_indexes.js'), 'utf8');
       
       // User-specific queries: saved internships, applications, recommendations, notifications
-      assert.ok(migrationFile.includes('saved_internships_student_id_idx'));
-      assert.ok(migrationFile.includes('internship_applications_student_id_idx'));
-      assert.ok(migrationFile.includes('recommendations_student_id_idx'));
+      assert.ok(migrationFile.includes('saved_internships_user_id_idx'));
+      assert.ok(migrationFile.includes('internship_applications_user_id_idx'));
+      assert.ok(migrationFile.includes('recommendations_user_id_idx'));
       assert.ok(migrationFile.includes('notifications_user_id_idx'));
     });
   });

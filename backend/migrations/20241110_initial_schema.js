@@ -16,11 +16,12 @@
  */
 
 import sequelize from '../src/config/database.js';
+import { migrationQueryInterface } from '../db/migrationQueryInterface.js';
 
-export const up = async () => {
+export const up = async ({ transaction } = {}) => {
   console.log('[Migration] Creating initial schema with explicit definitions...');
   
-  const queryInterface = sequelize.getQueryInterface();
+  const queryInterface = migrationQueryInterface(sequelize, transaction);
   
   // 1. Independent tables (no foreign keys)
   
@@ -1172,10 +1173,10 @@ export const up = async () => {
   console.log('[Migration] Initial schema created successfully with explicit definitions.');
 };
 
-export const down = async () => {
+export const down = async ({ transaction } = {}) => {
   console.log('[Migration] Rolling back initial schema...');
   
-  const queryInterface = sequelize.getQueryInterface();
+  const queryInterface = migrationQueryInterface(sequelize, transaction);
   
   // Drop tables in reverse order to satisfy foreign key dependencies
   await queryInterface.dropTable('student_activity_logs');

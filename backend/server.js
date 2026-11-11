@@ -122,11 +122,14 @@ app.use('/api/v1/admin', adminRoutes);
 
 // Global Error Handler
 app.use((err, req, res, next) => {
-  console.error('[Error]', err);
+  console.error('[Error]', {
+    name: err?.name || 'Error',
+    code: err?.original?.code || err?.parent?.code || err?.code,
+    path: req.path,
+  });
   const status = err.status || 500;
   return res.status(status).json({
-    detail: err.message || 'Internal server error.',
-    error: err.toString(),
+    detail: status >= 500 ? 'Internal server error.' : (err.message || 'Request failed.'),
   });
 });
 

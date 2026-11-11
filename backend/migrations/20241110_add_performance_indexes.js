@@ -12,20 +12,21 @@
  */
 
 import sequelize from '../src/config/database.js';
+import { migrationQueryInterface } from '../db/migrationQueryInterface.js';
 
-export const up = async () => {
+export const up = async ({ transaction } = {}) => {
   console.log('[Migration] Adding performance indexes...');
   
-  const queryInterface = sequelize.getQueryInterface();
+  const queryInterface = migrationQueryInterface(sequelize, transaction);
   
   // -------------------------------------------------------------
   // Internship indexes
   // -------------------------------------------------------------
   
   // Index for active internship listings with ordering
-  // Query: WHERE status = 'active' ORDER BY posted_at DESC
-  await queryInterface.addIndex('internships', ['status', 'posted_at'], {
-    name: 'internships_status_posted_at_idx'
+  // Query: WHERE status = 'active' ORDER BY created_at DESC
+  await queryInterface.addIndex('internships', ['status', 'created_at'], {
+    name: 'internships_status_created_at_idx'
   });
   
   // Index for location filtering
@@ -68,20 +69,20 @@ export const up = async () => {
   // SavedInternship indexes
   // -------------------------------------------------------------
   
-  // Index for student_id foreign key (JOIN performance)
-  // Query: WHERE student_id = ? ORDER BY created_at DESC
-  await queryInterface.addIndex('saved_internships', ['student_id'], {
-    name: 'saved_internships_student_id_idx'
+  // The initial schema uses user_id for the student identity.
+  // Query: WHERE user_id = ? ORDER BY created_at DESC
+  await queryInterface.addIndex('saved_internships', ['user_id'], {
+    name: 'saved_internships_user_id_idx'
   });
   
   // -------------------------------------------------------------
   // InternshipApplication indexes
   // -------------------------------------------------------------
   
-  // Index for student_id foreign key (JOIN performance)
-  // Query: WHERE student_id = ?
-  await queryInterface.addIndex('internship_applications', ['student_id'], {
-    name: 'internship_applications_student_id_idx'
+  // The initial schema uses user_id for the student identity.
+  // Query: WHERE user_id = ?
+  await queryInterface.addIndex('internship_applications', ['user_id'], {
+    name: 'internship_applications_user_id_idx'
   });
   
   // Index for internship_id foreign key (JOIN performance)
@@ -91,19 +92,19 @@ export const up = async () => {
   });
   
   // Composite index for user's applications with status
-  // Query: WHERE student_id = ? AND status = 'pending'
-  await queryInterface.addIndex('internship_applications', ['student_id', 'status'], {
-    name: 'internship_applications_student_id_status_idx'
+  // Query: WHERE user_id = ? AND status = 'pending'
+  await queryInterface.addIndex('internship_applications', ['user_id', 'status'], {
+    name: 'internship_applications_user_id_status_idx'
   });
   
   // -------------------------------------------------------------
   // Recommendation indexes
   // -------------------------------------------------------------
   
-  // Index for student_id foreign key (JOIN performance)
-  // Query: WHERE student_id = ?
-  await queryInterface.addIndex('recommendations', ['student_id'], {
-    name: 'recommendations_student_id_idx'
+  // The initial schema uses user_id for the student identity.
+  // Query: WHERE user_id = ?
+  await queryInterface.addIndex('recommendations', ['user_id'], {
+    name: 'recommendations_user_id_idx'
   });
   
   // Index for internship_id foreign key (JOIN performance)
@@ -231,10 +232,10 @@ export const up = async () => {
   console.log('[Migration] Performance indexes added successfully.');
 };
 
-export const down = async () => {
+export const down = async ({ transaction } = {}) => {
   console.log('[Migration] Rolling back performance indexes...');
   
-  const queryInterface = sequelize.getQueryInterface();
+  const queryInterface = migrationQueryInterface(sequelize, transaction);
   
   // Rollback in reverse order
   await queryInterface.removeIndex('weekly_logbooks', 'weekly_logbooks_project_team_id_status_idx');
@@ -252,18 +253,18 @@ export const down = async () => {
   await queryInterface.removeIndex('notifications', 'notifications_user_id_is_read_idx');
   await queryInterface.removeIndex('notifications', 'notifications_user_id_idx');
   await queryInterface.removeIndex('recommendations', 'recommendations_internship_id_idx');
-  await queryInterface.removeIndex('recommendations', 'recommendations_student_id_idx');
-  await queryInterface.removeIndex('internship_applications', 'internship_applications_student_id_status_idx');
+  await queryInterface.removeIndex('recommendations', 'recommendations_user_id_idx');
+  await queryInterface.removeIndex('internship_applications', 'internship_applications_user_id_status_idx');
   await queryInterface.removeIndex('internship_applications', 'internship_applications_internship_id_idx');
-  await queryInterface.removeIndex('internship_applications', 'internship_applications_student_id_idx');
-  await queryInterface.removeIndex('saved_internships', 'saved_internships_student_id_idx');
+  await queryInterface.removeIndex('internship_applications', 'internship_applications_user_id_idx');
+  await queryInterface.removeIndex('saved_internships', 'saved_internships_user_id_idx');
   await queryInterface.removeIndex('internships', 'internships_compensation_type_idx');
   await queryInterface.removeIndex('internships', 'internships_work_type_idx');
   await queryInterface.removeIndex('internships', 'internships_internship_type_idx');
   await queryInterface.removeIndex('internships', 'internships_category_idx');
   await queryInterface.removeIndex('internships', 'internships_country_idx');
   await queryInterface.removeIndex('internships', 'internships_city_idx');
-  await queryInterface.removeIndex('internships', 'internships_status_posted_at_idx');
+  await queryInterface.removeIndex('internships', 'internships_status_created_at_idx');
   
   console.log('[Migration] Performance indexes rolled back successfully.');
 };

@@ -67,17 +67,17 @@ describe('Task 1.16: Migration Validation and Hardening Tests', () => {
       const migrateFile = readFileSync(join(__dirname, '../db/migrate.js'), 'utf8');
       
       // Should use PostgreSQL advisory lock
-      assert.ok(migrateFile.includes('pg_try_advisory_lock'), 
-        'Migration runner should use PostgreSQL advisory lock');
-      assert.ok(migrateFile.includes('pg_advisory_unlock'), 
-        'Migration runner should release advisory lock');
+      assert.ok(migrateFile.includes('pg_try_advisory_xact_lock'),
+        'Migration runner should use a transaction-scoped PostgreSQL advisory lock');
+      assert.ok(migrateFile.includes('transaction: lockTransaction'),
+        'Migration work should use the transaction that owns the advisory lock');
     });
 
     it('should use transactions for migration execution', () => {
       const migrateFile = readFileSync(join(__dirname, '../db/migrate.js'), 'utf8');
       
       // Should use transactions
-      assert.ok(migrateFile.includes('sequelize.transaction()'), 
+      assert.ok(migrateFile.includes('sequelize.transaction(async (lockTransaction)'),
         'Migration runner should use transactions');
       assert.ok(migrateFile.includes('transaction.commit()'), 
         'Migration runner should commit transactions');
@@ -85,22 +85,19 @@ describe('Task 1.16: Migration Validation and Hardening Tests', () => {
         'Migration runner should rollback on failure');
     });
 
-    it('should release lock in finally block', () => {
+    it('should release the advisory lock through transaction completion', () => {
       const migrateFile = readFileSync(join(__dirname, '../db/migrate.js'), 'utf8');
-      
-      // Should have finally block for lock release
-      assert.ok(migrateFile.includes('finally'), 
-        'Migration runner should have finally block');
-      assert.ok(migrateFile.includes('releaseLock()'), 
-        'Migration runner should release lock in finally');
+      assert.ok(migrateFile.includes('return sequelize.transaction(async (lockTransaction)'),
+        'The lock-owning transaction should commit on success and roll back on failure');
     });
   });
 
   describe('Migration Runner Features', () => {
     it('should have lock acquisition function', async () => {
       const migrate = await import('../db/migrate.js');
-      // Module exists and can be imported
-      assert.ok(migrate);
+      assert.equal(typeof migrate.up, 'function');
+      assert.equal(typeof migrate.down, 'function');
+      assert.equal(typeof migrate.status, 'function');
     });
 
     it('should have migration status command', () => {

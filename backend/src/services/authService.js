@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { Op } from 'sequelize';
 import { User, StudentProfile } from '../models/index.js';
 import { JWT_SECRET, JWT_ACCESS_EXPIRATION, JWT_REFRESH_EXPIRATION } from '../config/env.js';
+import { withTransaction } from '../utils/transactions.js';
 
 export const hashPassword = async (password) => {
   const salt = await bcrypt.genSalt(10);
@@ -159,24 +160,28 @@ export const registerStudent = async (data) => {
   // Administrative and staff roles must be provisioned internally.
   const normalizedRole = 'student';
 
-  const user = await User.create({
-    email: email.toLowerCase(),
-    username: username || email.split('@')[0],
-    password: hashedPassword,
-    first_name: firstName,
-    last_name: lastName,
-    role: normalizedRole,
-    is_active: true,
-    is_email_verified: true,
-    is_approved: true,
-    is_staff: false,
-    is_superuser: false,
-  });
+  const user = await withTransaction(async (transaction) => {
+    const createdUser = await User.create({
+      email: email.toLowerCase(),
+      username: username || email.split('@')[0],
+      password: hashedPassword,
+      first_name: firstName,
+      last_name: lastName,
+      role: normalizedRole,
+      is_active: true,
+      is_email_verified: true,
+      is_approved: true,
+      is_staff: false,
+      is_superuser: false,
+    }, { transaction });
 
-  // Automatically create a StudentProfile
-  await StudentProfile.findOrCreate({
-    where: { user_id: user.id },
-    defaults: { user_id: user.id }
+    // This required profile either commits with the user or not at all.
+    await StudentProfile.findOrCreate({
+      where: { user_id: createdUser.id },
+      defaults: { user_id: createdUser.id },
+      transaction,
+    });
+    return createdUser;
   });
 
   const tokens = generateTokens(user);

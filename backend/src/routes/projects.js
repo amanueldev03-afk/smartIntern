@@ -5,6 +5,7 @@ import { upload } from '../middleware/upload.js';
 import { checkLogbookPlagiarism } from '../services/plagiarismChecker.js';
 
 import sequelize from '../config/database.js';
+import { databaseErrorResponse, withTransaction } from '../utils/transactions.js';
 
 const router = express.Router();
 
@@ -75,28 +76,38 @@ router.get('/my-channel/', requireAuth, async (req, res) => {
     if (!team) {
       const cohortId = '033d8b4d-e23c-40f1-915a-b1a8ef907655';
 
-      [team] = await ProjectTeam.findOrCreate({
-        where: { team_name: 'Campus Software House Team 1' },
-        defaults: {
-          team_name: 'Campus Software House Team 1',
-          project_title: 'Smart Health Monitoring System',
-          cohort_id: cohortId,
-          srs_status: 'DRAFT',
-          channels_active: true,
+      team = await withTransaction(async (transaction) => {
+        // Serialize creation of the one fallback team. The xact lock is
+        // transaction-scoped, so PostgreSQL releases it on commit/rollback.
+        if (sequelize.getDialect() === 'postgres') {
+          await sequelize.query('SELECT pg_advisory_xact_lock(11818001)', { transaction });
         }
-      });
-
-      if (req.user.role === 'student') {
-        await TeamMember.findOrCreate({
-          where: { team_id: team.id, student_id: req.user.id },
+        const [resolvedTeam] = await ProjectTeam.findOrCreate({
+          where: { team_name: 'Campus Software House Team 1' },
           defaults: {
-            team_id: team.id,
-            student_id: req.user.id,
-            assigned_role: 'Full Stack Engineer',
-            is_leader: false
-          }
+            team_name: 'Campus Software House Team 1',
+            project_title: 'Smart Health Monitoring System',
+            cohort_id: cohortId,
+            srs_status: 'DRAFT',
+            channels_active: true,
+          },
+          transaction,
         });
-      }
+
+        if (req.user.role === 'student') {
+          await TeamMember.findOrCreate({
+            where: { team_id: resolvedTeam.id, student_id: req.user.id },
+            defaults: {
+              team_id: resolvedTeam.id,
+              student_id: req.user.id,
+              assigned_role: 'Full Stack Engineer',
+              is_leader: false,
+            },
+            transaction,
+          });
+        }
+        return resolvedTeam;
+      });
     }
 
     const formattedTeam = await formatTeam(team, req);
@@ -124,7 +135,10 @@ router.get('/my-channel/', requireAuth, async (req, res) => {
       }))
     });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    const mapped = databaseErrorResponse(err);
+    return res.status(mapped.status).json({
+      detail: mapped.status >= 500 ? 'Project team could not be loaded.' : mapped.detail,
+    });
   }
 });
 

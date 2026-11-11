@@ -5,6 +5,7 @@ import { User, StudentProfile, Internship, InternshipApplication, Recommendation
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { paginate, getPaginationParams } from '../utils/pagination.js';
 import { computeProfileCompletion } from '../services/profileCompletion.js';
+import { withTransaction, databaseErrorResponse } from '../utils/transactions.js';
 
 const router = express.Router();
 
@@ -70,35 +71,51 @@ router.get('/students/', requireAuth, requireAdmin, async (req, res) => {
 // -------------------------------------------------------------
 router.post('/students/:id/activate/', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const student = await User.findByPk(req.params.id);
-    if (!student) return res.status(404).json({ detail: 'Student not found.' });
-    student.is_active = true;
-    await student.save();
-    await StudentActivityLog.create({
-      student_id: student.id,
-      action: 'ACCOUNT_ACTIVATED',
-      details: { activated_by: req.user.id }
+    const found = await withTransaction(async (transaction) => {
+      const student = await User.findByPk(req.params.id, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+      if (!student) return false;
+      student.is_active = true;
+      await student.save({ transaction });
+      await StudentActivityLog.create({
+        student_id: student.id,
+        action: 'ACCOUNT_ACTIVATED',
+        details: { activated_by: req.user.id },
+      }, { transaction });
+      return true;
     });
+    if (!found) return res.status(404).json({ detail: 'Student not found.' });
     return res.status(200).json({ message: 'Student account activated successfully.' });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    const mapped = databaseErrorResponse(err);
+    return res.status(mapped.status).json({ detail: mapped.status === 500 ? 'Student account could not be activated.' : mapped.detail });
   }
 });
 
 router.post('/students/:id/deactivate/', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const student = await User.findByPk(req.params.id);
-    if (!student) return res.status(404).json({ detail: 'Student not found.' });
-    student.is_active = false;
-    await student.save();
-    await StudentActivityLog.create({
-      student_id: student.id,
-      action: 'ACCOUNT_DEACTIVATED',
-      details: { deactivated_by: req.user.id }
+    const found = await withTransaction(async (transaction) => {
+      const student = await User.findByPk(req.params.id, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+      if (!student) return false;
+      student.is_active = false;
+      await student.save({ transaction });
+      await StudentActivityLog.create({
+        student_id: student.id,
+        action: 'ACCOUNT_DEACTIVATED',
+        details: { deactivated_by: req.user.id },
+      }, { transaction });
+      return true;
     });
+    if (!found) return res.status(404).json({ detail: 'Student not found.' });
     return res.status(200).json({ message: 'Student account deactivated successfully.' });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    const mapped = databaseErrorResponse(err);
+    return res.status(mapped.status).json({ detail: mapped.status === 500 ? 'Student account could not be deactivated.' : mapped.detail });
   }
 });
 
