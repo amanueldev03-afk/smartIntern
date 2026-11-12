@@ -2,10 +2,11 @@ import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'child_process';
 import { createServer } from 'net';
+import { unlink } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import sequelize from '../src/config/database.js';
-import { Internship, InternshipApplication, ProjectTeam, StudentActivityLog, StudentProfile, TeamMember, User } from '../src/models/index.js';
+import { CV, Internship, InternshipApplication, ProjectTeam, StudentActivityLog, StudentProfile, TeamMember, User } from '../src/models/index.js';
 import { generateTokens } from '../src/services/authService.js';
 
 const backendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -36,6 +37,18 @@ async function request(route, { method = 'GET', token, body } = {}) {
   let json;
   try { json = text ? JSON.parse(text) : null; } catch { json = text; }
   return { status: response.status, body: json, text };
+}
+
+async function uploadResume(route, token) {
+  const form = new FormData();
+  form.append('resume', new Blob(['%PDF-1.4 internal error injection'], { type: 'application/pdf' }), 'task118-audit.pdf');
+  const response = await fetch(`${baseUrl}${route}`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const text = await response.text();
+  return { status: response.status, body: text ? JSON.parse(text) : null, text };
 }
 
 async function createUser(role = 'student') {
@@ -125,6 +138,76 @@ describe('Task 1.18 HTTP transaction integration', () => {
     } finally {
       await sequelize.query(`DROP TRIGGER IF EXISTS task_1_18_http_registration_failure ON "${schema}"."student_profiles_studentprofile"`);
       await sequelize.query(`DROP FUNCTION IF EXISTS "${schema}".${functionName}()`);
+    }
+  });
+
+  it('returns stable validation errors for malformed registration and application payloads', async () => {
+    const registration = await request('/api/auth/register/', {
+      method: 'POST',
+      body: { email: 'missing-password@example.test' },
+    });
+    assert.equal(registration.status, 400);
+    assert.equal(registration.body.detail, 'Email and password are required.');
+
+    const student = await createUser();
+    for (const body of [{}, { internship_id: '12nope' }, { internship_id: true }]) {
+      const application = await request('/api/internships/applications/add/', {
+        method: 'POST', token: student.token, body,
+      });
+      assert.equal(application.status, 400);
+      assert.equal(application.body.detail, 'A valid internship_id is required.');
+      assert.ok(!/sql|postgres|sequelize|driver|constraint/i.test(application.body.detail));
+    }
+  });
+
+  it('keeps injected CV processor errors out of every status response', async () => {
+    const student = await createUser();
+    const functionName = 'task_1_18_cv_processing_failure';
+    await sequelize.query(`CREATE FUNCTION "${schema}".${functionName}() RETURNS trigger LANGUAGE plpgsql
+      AS $$ BEGIN
+        IF NEW.processing_status = 'PROCESSING' THEN RAISE EXCEPTION 'CV_INTERNAL_SENTINEL'; END IF;
+        RETURN NEW;
+      END $$`);
+    await sequelize.query(`CREATE TRIGGER task_1_18_cv_processing_failure BEFORE UPDATE
+      ON "${schema}"."student_profiles_cv" FOR EACH ROW
+      EXECUTE FUNCTION "${schema}".${functionName}()`);
+
+    let cv;
+    try {
+      const uploaded = await uploadResume('/api/students/me/resume/', student.token);
+      assert.equal(uploaded.status, 201);
+      cv = await CV.findByPk(uploaded.body.cv_id);
+      assert.ok(cv);
+
+      let status;
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        status = await request('/api/students/cv/status/', { token: student.token });
+        if (status.body.processing_status === 'FAILED') break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert.equal(status.body.processing_status, 'FAILED');
+      const safeMessage = 'CV processing failed. Please upload a readable PDF or DOCX and try again.';
+      assert.equal(status.body.processing_error, safeMessage);
+      assert.ok(!status.text.includes('CV_INTERNAL_SENTINEL'));
+      assert.ok(!status.text.includes('PostgreSQL'));
+      assert.ok(!status.text.includes('student_cvs/'));
+
+      const byId = await request(`/api/students/cv/${cv.id}/status/`, { token: student.token });
+      assert.equal(byId.status, 200);
+      assert.equal(byId.body.processing_error, safeMessage);
+      assert.ok(!byId.text.includes('CV_INTERNAL_SENTINEL'));
+
+      const resumeStatus = await request('/api/students/me/resume/', { token: student.token });
+      assert.equal(resumeStatus.status, 200);
+      assert.equal(resumeStatus.body.processing_error, safeMessage);
+      assert.ok(!resumeStatus.text.includes('CV_INTERNAL_SENTINEL'));
+      assert.ok(!serverOutput.includes('CV_INTERNAL_SENTINEL'));
+    } finally {
+      await sequelize.query(`DROP TRIGGER IF EXISTS task_1_18_cv_processing_failure ON "${schema}"."student_profiles_cv"`);
+      await sequelize.query(`DROP FUNCTION IF EXISTS "${schema}".${functionName}()`);
+      if (cv?.file?.startsWith('student_cvs/')) {
+        await unlink(path.resolve(backendDir, 'media', cv.file)).catch(() => {});
+      }
     }
   });
 

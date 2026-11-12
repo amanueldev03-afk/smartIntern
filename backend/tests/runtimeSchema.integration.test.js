@@ -6,11 +6,12 @@ import { fileURLToPath } from 'url';
 import sequelize from '../src/config/database.js';
 import * as models from '../src/models/index.js';
 import { runtimeSchemaSnapshot } from '../db/runtimeSchemaSnapshot.js';
-import { Internship, Skill } from '../src/models/index.js';
+import { Internship, ProjectTeam, Skill, StudentProfile, User } from '../src/models/index.js';
 
 const backendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const schema = process.env.TASK_1_18_TEST_SCHEMA || '';
 const runId = process.env.TASK_1_18_TEST_RUN_ID || '';
+let protectedUserSnapshot;
 const matchesType = (actual, expected) => {
   if (expected.type === 'STRING') return actual.udt_name === 'varchar'
     && actual.character_maximum_length === (expected.typeOptions?.length || 255);
@@ -35,6 +36,81 @@ function runMigrations() {
     encoding: 'utf8',
     env: process.env,
   });
+}
+
+function runMigration(command) {
+  return spawnSync(process.execPath, ['db/migrate.js', command], {
+    cwd: backendDir,
+    encoding: 'utf8',
+    env: process.env,
+  });
+}
+
+function quote(identifier) {
+  return sequelize.getQueryInterface().quoteIdentifier(identifier);
+}
+
+async function migrationRecorded() {
+  const [rows] = await sequelize.query(`SELECT EXISTS (SELECT 1 FROM "_migrations"
+    WHERE version = '20261111_add_runtime_model_schema') AS applied`);
+  return rows[0].applied;
+}
+
+async function schemaDigest() {
+  const [tables] = await sequelize.query(`SELECT tablename FROM pg_tables
+    WHERE schemaname = current_schema() ORDER BY tablename`);
+  const [columns] = await sequelize.query(`SELECT table_name, column_name, data_type, is_nullable,
+      column_default, is_identity FROM information_schema.columns
+    WHERE table_schema = current_schema() ORDER BY table_name, ordinal_position`);
+  const [relations] = await sequelize.query(`SELECT tablename, indexname, indexdef FROM pg_indexes
+    WHERE schemaname = current_schema() ORDER BY tablename, indexname`);
+  const [constraints] = await sequelize.query(`SELECT table_row.relname AS table_name,
+      constraint_row.conname, constraint_row.contype, pg_get_constraintdef(constraint_row.oid) AS definition
+    FROM pg_constraint AS constraint_row
+    JOIN pg_class AS table_row ON table_row.oid = constraint_row.conrelid
+    JOIN pg_namespace AS table_schema ON table_schema.oid = table_row.relnamespace
+    WHERE table_schema.nspname = current_schema() ORDER BY table_row.relname, constraint_row.conname`);
+  const [extensions] = await sequelize.query(`SELECT extension_row.extname, extension_namespace.nspname AS schema_name
+    FROM pg_extension AS extension_row
+    JOIN pg_namespace AS extension_namespace ON extension_namespace.oid = extension_row.extnamespace
+    WHERE extension_row.extname = 'pg_trgm'`);
+  return { tables, columns, relations, constraints, extensions };
+}
+
+async function expectCompatibilityFailure(label, mutate, restore, diagnostic) {
+  const down = runMigration('down');
+  assert.equal(down.status, 0, `${label}: ${down.stdout}\n${down.stderr}`);
+  let mutationStarted = false;
+  try {
+    await mutate();
+    mutationStarted = true;
+    const beforeDigest = await schemaDigest();
+    const userCount = await User.count();
+    const failed = runMigration('up');
+    const output = `${failed.stdout}\n${failed.stderr}`;
+    assert.equal(failed.status, 1, `${label}: expected migration failure\n${output}`);
+    assert.match(output, diagnostic, `${label}: useful incompatibility diagnostic`);
+    assert.equal(await migrationRecorded(), false, `${label}: migration record must not be written`);
+    assert.deepEqual(await schemaDigest(), beforeDigest, `${label}: no partial migration DDL may remain`);
+    assert.equal(await User.count(), userCount, `${label}: existing test data must remain unchanged`);
+    if (protectedUserSnapshot) {
+      const protectedUser = await User.findByPk(protectedUserSnapshot.id);
+      assert.ok(protectedUser, `${label}: protected user row must remain`);
+      assert.deepEqual({
+        id: protectedUser.id,
+        email: protectedUser.email,
+        username: protectedUser.username,
+        role: protectedUser.role,
+        is_active: protectedUser.is_active,
+      }, protectedUserSnapshot, `${label}: protected user data must remain unchanged`);
+    }
+  } finally {
+    if (mutationStarted) await restore();
+    if (!await migrationRecorded()) {
+      const recovered = runMigration('up');
+      assert.equal(recovered.status, 0, `${label}: restore/reapply failed\n${recovered.stdout}\n${recovered.stderr}`);
+    }
+  }
 }
 
 describe('Task 1.18 PostgreSQL migration-to-runtime-model compatibility', () => {
@@ -150,6 +226,170 @@ describe('Task 1.18 PostgreSQL migration-to-runtime-model compatibility', () => 
         `Missing model index on ${table} (${expected.fields.join(', ')})`);
       }
     }
+  });
+
+  it('revalidates a correct pre-existing runtime schema on repeated up', async () => {
+    const record = await User.create({
+      email: `runtime-schema-protected-${runId}@example.test`,
+      username: `runtime-schema-protected-${runId}`,
+      password: 'test-only-hash',
+      role: 'student',
+      is_active: true,
+    });
+    protectedUserSnapshot = {
+      id: record.id,
+      email: record.email,
+      username: record.username,
+      role: record.role,
+      is_active: record.is_active,
+    };
+    const down = runMigration('down');
+    assert.equal(down.status, 0, `${down.stdout}\n${down.stderr}`);
+    const up = runMigration('up');
+    assert.equal(up.status, 0, `${up.stdout}\n${up.stderr}`);
+    assert.match(up.stdout, /Completed: 20261111_add_runtime_model_schema/);
+  });
+
+  it('rejects an existing runtime column with a missing database default before DDL', async () => {
+    await expectCompatibilityFailure(
+      'missing role default',
+      () => sequelize.query('ALTER TABLE "accounts_user" ALTER COLUMN "role" DROP DEFAULT'),
+      () => sequelize.query(`ALTER TABLE "accounts_user" ALTER COLUMN "role" SET DEFAULT 'student'`),
+      /accounts_user\.role has an incompatible database default/,
+    );
+  });
+
+  it('rejects incorrect owned auto-increment sequence behavior before DDL', async () => {
+    const [rows] = await sequelize.query(`SELECT pg_get_serial_sequence(
+      format('%I.%I', current_schema(), 'administration_studentactivitylog'), 'id') AS sequence_name`);
+    const sequenceName = rows[0].sequence_name;
+    assert.ok(sequenceName);
+    await expectCompatibilityFailure(
+      'unowned auto-increment sequence',
+      () => sequelize.query(`ALTER SEQUENCE ${sequenceName} OWNED BY NONE`),
+      () => sequelize.query(`ALTER SEQUENCE ${sequenceName} OWNED BY ${quote(schema)}.${quote('administration_studentactivitylog')}.${quote('id')}`),
+      /administration_studentactivitylog\.id is incompatible: expected an owned PostgreSQL auto-increment sequence/,
+    );
+  });
+
+  it('rejects a missing per-column unique constraint before DDL', async () => {
+    const [rows] = await sequelize.query(`SELECT constraint_row.conname
+      FROM pg_constraint AS constraint_row
+      JOIN pg_class AS table_row ON table_row.oid = constraint_row.conrelid
+      JOIN pg_namespace AS table_schema ON table_schema.oid = table_row.relnamespace
+      JOIN LATERAL unnest(constraint_row.conkey) AS key_row(attnum) ON true
+      JOIN pg_attribute AS attribute_row ON attribute_row.attrelid = table_row.oid AND attribute_row.attnum = key_row.attnum
+      WHERE constraint_row.contype = 'u' AND table_schema.nspname = current_schema()
+        AND table_row.relname = 'accounts_user' AND attribute_row.attname = 'email'
+        AND cardinality(constraint_row.conkey) = 1 LIMIT 1`);
+    const constraintName = rows[0]?.conname;
+    assert.ok(constraintName);
+    await expectCompatibilityFailure(
+      'missing accounts_user.email uniqueness',
+      () => sequelize.query(`ALTER TABLE ${quote('accounts_user')} DROP CONSTRAINT ${quote(constraintName)}`),
+      () => sequelize.query(`ALTER TABLE ${quote('accounts_user')} ADD CONSTRAINT ${quote('task_1_18_restore_email_unique')} UNIQUE (${quote('email')})`),
+      /accounts_user.*missing or has an incompatible index/,
+    );
+  });
+
+  it('rejects an unexpected foreign key before DDL', async () => {
+    const table = 'student_profiles_studentprofile';
+    const constraint = 'task_1_18_unexpected_user_fk';
+    await expectCompatibilityFailure(
+      'unexpected user_id foreign key',
+      () => sequelize.query(`ALTER TABLE ${quote(table)} ADD CONSTRAINT ${quote(constraint)}
+        FOREIGN KEY (${quote('user_id')}) REFERENCES ${quote('accounts_user')} (${quote('id')})
+        ON DELETE RESTRICT ON UPDATE CASCADE`),
+      () => sequelize.query(`ALTER TABLE ${quote(table)} DROP CONSTRAINT ${quote(constraint)}`),
+      /student_profiles_studentprofile has unexpected or incompatible foreign keys/,
+    );
+  });
+
+  it('rejects a foreign key that targets the wrong runtime table', async () => {
+    const table = 'student_profiles_studentprofile';
+    const [rows] = await sequelize.query(`SELECT constraint_row.conname
+      FROM pg_constraint AS constraint_row
+      JOIN pg_class AS local_table ON local_table.oid = constraint_row.conrelid
+      JOIN pg_namespace AS local_schema ON local_schema.oid = local_table.relnamespace
+      JOIN pg_class AS referenced_table ON referenced_table.oid = constraint_row.confrelid
+      JOIN LATERAL unnest(constraint_row.conkey) AS key_row(attnum) ON true
+      JOIN pg_attribute AS local_attribute ON local_attribute.attrelid = local_table.oid AND local_attribute.attnum = key_row.attnum
+      WHERE constraint_row.contype = 'f' AND local_schema.nspname = current_schema()
+        AND local_table.relname = :tableName AND local_attribute.attname = 'user_id'
+        AND referenced_table.relname = 'accounts_user' LIMIT 1`, { replacements: { tableName: table } });
+    const constraintName = rows[0]?.conname;
+    assert.ok(constraintName);
+    await expectCompatibilityFailure(
+      'wrong user_id foreign key target',
+      async () => {
+        await sequelize.query(`ALTER TABLE ${quote(table)} DROP CONSTRAINT ${quote(constraintName)}`);
+        await sequelize.query(`ALTER TABLE ${quote(table)} ADD CONSTRAINT ${quote('task_1_18_wrong_user_fk')}
+          FOREIGN KEY (${quote('user_id')}) REFERENCES ${quote('projects_projectteam')} (${quote('id')})
+          ON DELETE CASCADE ON UPDATE CASCADE`);
+      },
+      async () => {
+        await sequelize.query(`ALTER TABLE ${quote(table)} DROP CONSTRAINT ${quote('task_1_18_wrong_user_fk')}`);
+        await sequelize.query(`ALTER TABLE ${quote(table)} ADD CONSTRAINT ${quote('task_1_18_restore_user_fk')}
+          FOREIGN KEY (${quote('user_id')}) REFERENCES ${quote('accounts_user')} (${quote('id')})
+          ON DELETE CASCADE ON UPDATE CASCADE`);
+      },
+      /student_profiles_studentprofile is missing an expected foreign key with exact target\/actions/,
+    );
+  });
+
+  it('rejects an index with the wrong access method before DDL', async () => {
+    const table = 'internships_internship';
+    const index = 'runtime_internships_type_idx';
+    await expectCompatibilityFailure(
+      'hash index where btree is required',
+      async () => {
+        await sequelize.query(`DROP INDEX ${quote(index)}`);
+        await sequelize.query(`CREATE INDEX ${quote(index)} ON ${quote(table)} USING HASH (${quote('internship_type')})`);
+      },
+      async () => {
+        await sequelize.query(`DROP INDEX ${quote(index)}`);
+        await sequelize.query(`CREATE INDEX ${quote(index)} ON ${quote(table)} USING BTREE (${quote('internship_type')})`);
+      },
+      /internships_internship.*missing or has an incompatible index/,
+    );
+  });
+
+  it('rejects a trigram index on the wrong column before DDL', async () => {
+    const [rows] = await sequelize.query(`SELECT extension_namespace.nspname AS schema_name
+      FROM pg_extension AS extension_row
+      JOIN pg_namespace AS extension_namespace ON extension_namespace.oid = extension_row.extnamespace
+      WHERE extension_row.extname = 'pg_trgm'`);
+    const extensionSchema = rows[0]?.schema_name;
+    assert.ok(extensionSchema);
+    const table = 'internships_internship';
+    const index = 'runtime_internships_title_trgm_idx';
+    await expectCompatibilityFailure(
+      'title trigram index on organization_name',
+      async () => {
+        await sequelize.query(`DROP INDEX ${quote(index)}`);
+        await sequelize.query(`CREATE INDEX ${quote(index)} ON ${quote(table)} USING GIN
+          (${quote('organization_name')} ${quote(extensionSchema)}.gin_trgm_ops)`);
+      },
+      async () => {
+        await sequelize.query(`DROP INDEX ${quote(index)}`);
+        await sequelize.query(`CREATE INDEX ${quote(index)} ON ${quote(table)} USING GIN
+          (${quote('title')} ${quote(extensionSchema)}.gin_trgm_ops)`);
+      },
+      /internships_internship.*missing or has an incompatible index/,
+    );
+  });
+
+  it('rejects a missing required composite unique index before DDL', async () => {
+    const table = 'internships_internshipapplication';
+    const index = 'internship_application_unique';
+    await expectCompatibilityFailure(
+      'missing application student/internship composite uniqueness',
+      () => sequelize.query(`DROP INDEX ${quote(index)}`),
+      () => sequelize.getQueryInterface().addIndex(table, ['student_id', 'internship_id'], {
+        name: index, unique: true, transaction: undefined,
+      }),
+      /internships_internshipapplication.*missing or has an incompatible index/,
+    );
   });
 
   it('runs representative listing queries through Sequelize without schema synchronization', async () => {

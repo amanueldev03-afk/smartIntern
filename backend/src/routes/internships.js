@@ -236,11 +236,19 @@ router.get('/applications/', requireAuth, async (req, res) => {
 router.post('/applications/add/', requireAuth, async (req, res) => {
   try {
     const { internship_id, cover_letter } = req.body;
+    const normalizedInternshipId = typeof internship_id === 'number'
+      ? internship_id
+      : (typeof internship_id === 'string' && /^\d+$/.test(internship_id.trim())
+        ? Number(internship_id.trim()) : Number.NaN);
+    const internshipId = normalizedInternshipId;
+    if (!Number.isSafeInteger(internshipId) || internshipId <= 0) {
+      return res.status(400).json({ detail: 'A valid internship_id is required.' });
+    }
     const [app] = await withTransaction((transaction) => InternshipApplication.findOrCreate({
-      where: { student_id: req.user.id, internship_id: parseInt(internship_id, 10) },
+      where: { student_id: req.user.id, internship_id: internshipId },
       defaults: {
         student_id: req.user.id,
-        internship_id: parseInt(internship_id, 10),
+        internship_id: internshipId,
         notes: cover_letter || '',
         status: 'applied',
       },

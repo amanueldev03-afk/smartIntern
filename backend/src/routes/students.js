@@ -314,6 +314,7 @@ const handleResumeUpload = async (req, res) => {
     (async () => {
       try {
         cv.processing_status = 'PROCESSING';
+        cv.processing_error = '';
         await cv.save();
 
         const rawText = await extractTextFromFile(filePath);
@@ -339,10 +340,20 @@ const handleResumeUpload = async (req, res) => {
         }
         invalidateRecommendationCache(req.user.id);
       } catch (err) {
-        console.error('CV Background processing error:', err);
+        console.error('[CV] Background processing failed', {
+          name: err?.name || 'Error',
+          code: err?.original?.code || err?.parent?.code || err?.code || 'unknown',
+        });
         cv.processing_status = 'FAILED';
-        cv.error_message = err.message;
-        await cv.save();
+        cv.processing_error = 'CV processing failed. Please upload a readable PDF or DOCX and try again.';
+        try {
+          await cv.save();
+        } catch (persistError) {
+          console.error('[CV] Failed to persist safe processing status', {
+            name: persistError?.name || 'Error',
+            code: persistError?.original?.code || persistError?.parent?.code || persistError?.code || 'unknown',
+          });
+        }
       }
     })();
 
@@ -350,6 +361,7 @@ const handleResumeUpload = async (req, res) => {
     return res.status(201).json({
       cv_id: cv.id,
       processing_status: cv.processing_status,
+      processing_error: cv.processing_error,
       resume_url: fullUrl,
       message: 'CV uploaded. Processing in background.',
     });
@@ -379,6 +391,7 @@ router.get('/me/resume/', requireAuth, async (req, res) => {
     return res.status(200).json({
       has_cv: true,
       processing_status: cv.processing_status,
+      processing_error: cv.processing_error,
       resume_url: fullUrl,
       uploaded_at: cv.uploaded_at,
       extracted_data: cv.extracted_data || {},
@@ -409,7 +422,7 @@ router.get('/cv/status/', requireAuth, async (req, res) => {
       processing_status: cv.processing_status,
       uploaded_at: cv.uploaded_at,
       extracted_data: cv.extracted_data || {},
-      error_message: cv.error_message,
+      processing_error: cv.processing_error,
     });
   } catch (err) {
     return sendRouteError(res, err, 'The request could not be completed.');
@@ -434,7 +447,7 @@ router.get('/cv/:id/status/', requireAuth, async (req, res) => {
       processing_status: cv.processing_status,
       uploaded_at: cv.uploaded_at,
       extracted_data: cv.extracted_data || {},
-      error_message: cv.error_message,
+      processing_error: cv.processing_error,
     });
   } catch (err) {
     return sendRouteError(res, err, 'The request could not be completed.');
