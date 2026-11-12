@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendRouteError } from '../utils/routeErrors.js';
 import { Notification } from '../models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -13,7 +14,7 @@ router.get('/', requireAuth, async (req, res) => {
     });
     return res.status(200).json(list);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -28,7 +29,7 @@ const markReadHandler = async (req, res) => {
     }
     return res.status(200).json({ message: 'Marked as read.' });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 };
 
@@ -43,7 +44,7 @@ router.post('/mark-all-read/', requireAuth, async (req, res) => {
     );
     return res.status(200).json({ message: 'All notifications marked as read.' });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -54,7 +55,7 @@ router.get('/unread-count/', requireAuth, async (req, res) => {
     });
     return res.status(200).json({ count });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 

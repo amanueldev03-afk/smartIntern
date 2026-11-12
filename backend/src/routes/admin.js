@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendRouteError } from '../utils/routeErrors.js';
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import { User, StudentProfile, Internship, InternshipApplication, Recommendation, StudentActivityLog, DataSource, CV, Skill } from '../models/index.js';
@@ -62,7 +63,7 @@ router.get('/students/', requireAuth, requireAdmin, async (req, res) => {
 
     return res.status(200).json(paginate(req, count, results));
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -72,7 +73,8 @@ router.get('/students/', requireAuth, requireAdmin, async (req, res) => {
 router.post('/students/:id/activate/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const found = await withTransaction(async (transaction) => {
-      const student = await User.findByPk(req.params.id, {
+      const student = await User.findOne({
+        where: { id: req.params.id, role: 'student' },
         transaction,
         lock: transaction.LOCK.UPDATE,
       });
@@ -97,7 +99,8 @@ router.post('/students/:id/activate/', requireAuth, requireAdmin, async (req, re
 router.post('/students/:id/deactivate/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const found = await withTransaction(async (transaction) => {
-      const student = await User.findByPk(req.params.id, {
+      const student = await User.findOne({
+        where: { id: req.params.id, role: 'student' },
         transaction,
         lock: transaction.LOCK.UPDATE,
       });
@@ -130,7 +133,7 @@ router.get('/students/:id/activity/', requireAuth, requireAdmin, async (req, res
     });
     return res.status(200).json(logs);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -238,7 +241,7 @@ router.get('/analytics/', requireAuth, requireAdmin, async (req, res) => {
       recent_activity: [],
     });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -283,7 +286,7 @@ router.get('/analytics/ai/', requireAuth, requireAdmin, async (req, res) => {
       }
     });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -298,7 +301,7 @@ router.post('/data-sources/:id/sync-now/', requireAuth, requireAdmin, async (req
     await ds.save();
     return res.status(200).json({ message: 'Data source sync completed successfully.' });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 

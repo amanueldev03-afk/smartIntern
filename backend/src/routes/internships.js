@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendRouteError } from '../utils/routeErrors.js';
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import {
@@ -64,7 +65,7 @@ router.get('/', async (req, res) => {
     const formattedRows = rows.map(formatInternship);
     return res.status(200).json(paginate(req, count, formattedRows));
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -81,7 +82,7 @@ router.get('/latest/', async (req, res) => {
     });
     return res.status(200).json(items.map(formatInternship));
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -113,7 +114,7 @@ router.get('/saved/', requireAuth, async (req, res) => {
 
     return res.status(200).json(results);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -129,7 +130,7 @@ router.post('/:id/save/', requireAuth, async (req, res) => {
     });
     return res.status(201).json({ message: 'Internship saved successfully.', id: saved.id });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -141,7 +142,7 @@ router.delete('/:id/save/', requireAuth, async (req, res) => {
     });
     return res.status(204).send();
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -157,7 +158,7 @@ router.post('/saved/add/', requireAuth, async (req, res) => {
     });
     return res.status(201).json({ message: 'Saved successfully', id: saved.id });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -169,7 +170,7 @@ router.delete('/saved/:id/', requireAuth, async (req, res) => {
     });
     return res.status(204).send();
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -208,7 +209,7 @@ router.get(['/applications/history/', '/history/'], requireAuth, async (req, res
       results,
     });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -228,7 +229,7 @@ router.get('/applications/', requireAuth, async (req, res) => {
     });
     return res.status(200).json(applications);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -261,7 +262,7 @@ router.get('/applications/:id/', requireAuth, async (req, res) => {
     if (!app) return res.status(404).json({ detail: 'Application not found.' });
     return res.status(200).json(app);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -273,7 +274,7 @@ router.put('/applications/:id/', requireAuth, async (req, res) => {
     await app.save();
     return res.status(200).json(app);
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -285,7 +286,7 @@ router.patch('/applications/:id/', requireAuth, async (req, res) => {
     await app.save();
     return res.status(200).json(app);
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -313,7 +314,7 @@ router.get('/dashboard/', requireAuth, async (req, res) => {
       has_active_application: appliedCount > 0,
     });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -331,7 +332,7 @@ router.get('/admin/', requireAuth, requireAdmin, async (req, res) => {
     });
     return res.status(200).json(paginate(req, count, rows.map(formatInternship)));
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -349,7 +350,7 @@ router.post('/admin/', requireAuth, requireAdmin, async (req, res) => {
     });
     return res.status(201).json(formatInternship(internship));
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -369,7 +370,7 @@ router.get('/admin/dashboard/', requireAuth, requireAdmin, async (req, res) => {
       total_sources: totalSources,
     });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -378,7 +379,7 @@ router.get('/admin/sources/', requireAuth, requireAdmin, async (req, res) => {
     const sources = await DataSource.findAll();
     return res.status(200).json(sources);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -387,7 +388,7 @@ router.post('/admin/sources/', requireAuth, requireAdmin, async (req, res) => {
     const source = await DataSource.create(req.body);
     return res.status(201).json(source);
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -397,7 +398,7 @@ router.get('/admin/sources/:id/', requireAuth, requireAdmin, async (req, res) =>
     if (!source) return res.status(404).json({ detail: 'Source not found.' });
     return res.status(200).json(source);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -408,7 +409,7 @@ router.put('/admin/sources/:id/', requireAuth, requireAdmin, async (req, res) =>
     await source.update(req.body);
     return res.status(200).json(source);
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -419,7 +420,7 @@ router.patch('/admin/sources/:id/', requireAuth, requireAdmin, async (req, res) 
     await source.update(req.body);
     return res.status(200).json(source);
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -429,7 +430,7 @@ router.delete('/admin/sources/:id/', requireAuth, requireAdmin, async (req, res)
     if (source) await source.destroy();
     return res.status(204).send();
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -446,7 +447,7 @@ router.get('/admin/skills/', requireAuth, requireAdmin, async (req, res) => {
     const skills = await Skill.findAll({ order: [['name', 'ASC']] });
     return res.status(200).json(skills);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -455,7 +456,7 @@ router.post('/admin/skills/', requireAuth, requireAdmin, async (req, res) => {
     const skill = await Skill.create(req.body);
     return res.status(201).json(skill);
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -465,7 +466,7 @@ router.get('/admin/skills/:id/', requireAuth, requireAdmin, async (req, res) => 
     if (!skill) return res.status(404).json({ detail: 'Skill not found.' });
     return res.status(200).json(skill);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -476,7 +477,7 @@ router.put('/admin/skills/:id/', requireAuth, requireAdmin, async (req, res) => 
     await skill.update(req.body);
     return res.status(200).json(skill);
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -487,7 +488,7 @@ router.patch('/admin/skills/:id/', requireAuth, requireAdmin, async (req, res) =
     await skill.update(req.body);
     return res.status(200).json(skill);
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -497,7 +498,7 @@ router.delete('/admin/skills/:id/', requireAuth, requireAdmin, async (req, res) 
     if (skill) await skill.destroy();
     return res.status(204).send();
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -542,7 +543,7 @@ router.get('/admin/data-sources/health/', requireAuth, requireAdmin, async (req,
     }
     return res.status(200).json(sources);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -556,7 +557,7 @@ router.get('/admin/review/', requireAuth, requireAdmin, async (req, res) => {
     });
     return res.status(200).json(pending.map(formatInternship));
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -569,7 +570,7 @@ router.post('/admin/:id/approve/', requireAuth, requireAdmin, async (req, res) =
     await item.save();
     return res.status(200).json({ message: 'Internship approved and published.' });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -581,7 +582,7 @@ router.post('/admin/:id/reject/', requireAuth, requireAdmin, async (req, res) =>
     await item.save();
     return res.status(200).json({ message: 'Internship rejected.' });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -591,7 +592,7 @@ router.post('/admin/:id/remove/', requireAuth, requireAdmin, async (req, res) =>
     if (item) await item.destroy();
     return res.status(200).json({ message: 'Internship removed.' });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -603,7 +604,7 @@ router.post('/admin/internships/:id/verify/', requireAuth, requireAdmin, async (
     await item.save();
     return res.status(200).json(formatInternship(item));
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -615,7 +616,7 @@ router.get('/admin/:id/', requireAuth, requireAdmin, async (req, res) => {
     if (!item) return res.status(404).json({ detail: 'Internship not found.' });
     return res.status(200).json(formatInternship(item));
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -626,7 +627,7 @@ router.put('/admin/:id/', requireAuth, requireAdmin, async (req, res) => {
     await item.update(req.body);
     return res.status(200).json(formatInternship(item));
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -637,7 +638,7 @@ router.patch('/admin/:id/', requireAuth, requireAdmin, async (req, res) => {
     await item.update(req.body);
     return res.status(200).json(formatInternship(item));
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -647,7 +648,7 @@ router.delete('/admin/:id/', requireAuth, requireAdmin, async (req, res) => {
     if (item) await item.destroy();
     return res.status(204).send();
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -662,7 +663,7 @@ router.get('/:id/', async (req, res) => {
     if (!item) return res.status(404).json({ detail: 'Internship not found.' });
     return res.status(200).json(formatInternship(item));
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 

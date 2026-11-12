@@ -45,8 +45,12 @@ describe('Task 1.18 PostgreSQL business workflow integration', () => {
       assert.equal(table.schema, schema, `${model.name} must be scoped to the isolated test schema.`);
     }
 
-    // Destructive synchronization is confined to the unique schema validated above.
-    await sequelize.sync({ force: true });
+    const [migrations] = await sequelize.query('SELECT version FROM "_migrations" ORDER BY version');
+    assert.ok(migrations.some(({ version }) => version === '20261111_add_runtime_model_schema'),
+      'Business workflows require the migration-created runtime schema.');
+    for (const model of [User, StudentProfile, Internship, InternshipApplication, ProjectTeam, TeamMember, StudentActivityLog]) {
+      await sequelize.getQueryInterface().describeTable(model.getTableName());
+    }
   });
 
   after(async () => {

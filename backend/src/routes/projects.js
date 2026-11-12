@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendRouteError } from '../utils/routeErrors.js';
 import { ProjectTeam, TeamMember, ProjectTeamMessage, WeeklyLogbook, User } from '../models/index.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
@@ -162,7 +163,7 @@ router.post('/teams/:teamId/srs/upload/', requireAuth, upload.single('srs_docume
       srs_document: team.srs_document ? `${req.protocol}://${req.get('host')}/media/${team.srs_document}` : null,
     });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -186,7 +187,7 @@ router.post('/teams/:teamId/srs/review/', requireAuth, requireRole('advisor', 'a
       coding_unlocked: team.coding_unlocked,
     });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -216,7 +217,7 @@ router.get('/teams/:teamId/messages/', requireAuth, async (req, res) => {
       created_at: m.created_at,
     })));
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -248,7 +249,7 @@ router.post('/teams/:teamId/messages/', requireAuth, async (req, res) => {
       created_at: msg.created_at,
     });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -261,7 +262,7 @@ router.get('/teams/', requireAuth, async (req, res) => {
     const formatted = await Promise.all(teams.map(t => formatTeam(t, req)));
     return res.status(200).json(formatted);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -275,7 +276,7 @@ router.get('/teams/:id/', requireAuth, async (req, res) => {
     const formatted = await formatTeam(team, req);
     return res.status(200).json(formatted);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -290,7 +291,7 @@ router.get('/logbooks/', requireAuth, async (req, res) => {
     });
     return res.status(200).json(logbooks);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -318,7 +319,7 @@ router.post('/logbooks/', requireAuth, async (req, res) => {
     });
     return res.status(201).json(logbook);
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 

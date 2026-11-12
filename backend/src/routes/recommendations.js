@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendRouteError } from '../utils/routeErrors.js';
 import { Internship, StudentProfile, Recommendation, CV, User, Skill } from '../models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { scoreInternship } from '../services/recommendationEngine.js';
@@ -123,7 +124,7 @@ router.get('/', requireAuth, async (req, res) => {
       }
     });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -167,7 +168,7 @@ router.get('/history/', requireAuth, async (req, res) => {
 
     return res.status(200).json(paginate(req, count, results, pageSize));
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -195,7 +196,7 @@ router.post('/:id/feedback/', requireAuth, async (req, res) => {
 
     return res.status(200).json({ message: 'Feedback recorded successfully.', status: action || 'viewed' });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 

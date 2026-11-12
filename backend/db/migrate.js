@@ -220,19 +220,29 @@ export async function down() {
  */
 export async function status() {
   console.log('[Migration] Migration status:');
-  
+
   await connectDB();
-  await createMigrationTable();
-  
-  const executed = await getExecutedMigrations();
   const migrations = loadMigrations();
-  
+
+  const [metadataRows] = await sequelize.query(
+    `SELECT to_regclass(format('%I.%I', current_schema(), :tableName)) IS NOT NULL AS exists`,
+    { replacements: { tableName: MIGRATION_TABLE } },
+  );
+  if (!metadataRows[0].exists) {
+    console.log('\nMigration metadata table does not exist. Migrations have not been initialized.');
+    console.log(`Pending: ${migrations.length}`);
+    migrations.forEach(({ version }) => console.log(`  ○ ${version}`));
+    return { initialized: false, executed: [], pending: migrations.map(({ version }) => version) };
+  }
+
+  const executed = await getExecutedMigrations();
   console.log(`\nExecuted: ${executed.length}`);
   executed.forEach(v => console.log(`  ✓ ${v}`));
-  
+
   const pending = migrations.filter(m => !executed.includes(m.version));
   console.log(`\nPending: ${pending.length}`);
   pending.forEach(m => console.log(`  ○ ${m.version}`));
+  return { initialized: true, executed, pending: pending.map(({ version }) => version) };
 }
 
 // Keep imports side-effect free so tests and tooling can inspect the runner.

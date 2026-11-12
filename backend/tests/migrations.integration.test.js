@@ -6,6 +6,7 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import sequelize from '../src/config/database.js';
+import { User } from '../src/models/index.js';
 
 const backendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const schema = process.env.TASK_1_18_TEST_SCHEMA || '';
@@ -13,6 +14,7 @@ const runId = process.env.TASK_1_18_TEST_RUN_ID || '';
 const expectedMigrations = [
   '20241110_add_performance_indexes',
   '20241110_initial_schema',
+  '20261111_add_runtime_model_schema',
 ];
 const tempDirs = [];
 
@@ -93,6 +95,12 @@ describe('Task 1.18 PostgreSQL migration integration', () => {
   });
 
   it('executes both historical migrations and reports their isolated status', async () => {
+    const beforeStatus = runMigration('status');
+    assert.equal(beforeStatus.status, 0, `${beforeStatus.stdout}\n${beforeStatus.stderr}`);
+    assert.match(beforeStatus.stdout, /Migration metadata table does not exist/);
+    const [beforeMetadata] = await sequelize.query("SELECT to_regclass('_migrations') AS table_name");
+    assert.equal(beforeMetadata[0].table_name, null, 'Status must not create migration metadata.');
+
     const up = runMigration('up');
     assert.equal(up.status, 0, `${up.stdout}\n${up.stderr}`);
 
@@ -101,19 +109,40 @@ describe('Task 1.18 PostgreSQL migration integration', () => {
 
     const [tables] = await sequelize.query(`SELECT count(*)::int AS count FROM pg_tables
       WHERE schemaname = current_schema()`);
-    assert.ok(tables[0].count > 20, 'The historical schema migration should create tables in the isolated schema.');
+    assert.ok(tables[0].count > 40, 'Historical and runtime schemas should coexist in the isolated schema.');
+    const [runtimeTable] = await sequelize.query("SELECT to_regclass('accounts_user') AS table_name");
+    const [legacyTable] = await sequelize.query("SELECT to_regclass('users') AS table_name");
+    assert.ok(runtimeTable[0].table_name, 'Runtime tables should be added.');
+    assert.ok(legacyTable[0].table_name, 'Historical tables should remain intact.');
 
     const status = runMigration('status');
     assert.equal(status.status, 0, `${status.stdout}\n${status.stderr}`);
-    assert.match(status.stdout, /Executed: 2/);
+    assert.match(status.stdout, /Executed: 3/);
     assert.match(status.stdout, /Pending: 0/);
   });
 
   it('rolls back both migrations in dependency order and reapplies them', async () => {
+    const preservedUser = await User.create({
+      email: `migration-rollback-${runId}@example.test`,
+      username: `migration-rollback-${runId}`,
+      password: 'test-only-hash',
+      role: 'student',
+    });
+    const [runtimeBeforeDown] = await sequelize.query("SELECT to_regclass('accounts_user') AS table_name");
+    assert.ok(runtimeBeforeDown[0].table_name);
+    const downRuntime = runMigration('down');
+    assert.equal(downRuntime.status, 0, `${downRuntime.stdout}\n${downRuntime.stderr}`);
+    const [afterDown] = await sequelize.query('SELECT version FROM "_migrations" ORDER BY version');
+    assert.deepEqual(afterDown.map((row) => row.version), ['20241110_add_performance_indexes', '20241110_initial_schema']);
+
+    const [runtimeAfterDown] = await sequelize.query("SELECT to_regclass('accounts_user') AS table_name");
+    assert.ok(runtimeAfterDown[0].table_name, 'Runtime tables and their data are preserved by rollback.');
+    assert.ok(await User.findByPk(preservedUser.id), 'Runtime application data must remain intact after rollback.');
+
     const downIndexes = runMigration('down');
     assert.equal(downIndexes.status, 0, `${downIndexes.stdout}\n${downIndexes.stderr}`);
-    const [afterDown] = await sequelize.query('SELECT version FROM "_migrations" ORDER BY version');
-    assert.deepEqual(afterDown.map((row) => row.version), ['20241110_initial_schema']);
+    const [afterIndexesDown] = await sequelize.query('SELECT version FROM "_migrations" ORDER BY version');
+    assert.deepEqual(afterIndexesDown.map((row) => row.version), ['20241110_initial_schema']);
 
     const downSchema = runMigration('down');
     assert.equal(downSchema.status, 0, `${downSchema.stdout}\n${downSchema.stderr}`);
@@ -121,6 +150,9 @@ describe('Task 1.18 PostgreSQL migration integration', () => {
     assert.equal(afterSchemaDown.length, 0);
     const [schemaTable] = await sequelize.query("SELECT to_regclass('internships') AS table_name");
     assert.equal(schemaTable[0].table_name, null);
+    const [runtimeRetained] = await sequelize.query("SELECT to_regclass('accounts_user') AS table_name");
+    assert.ok(runtimeRetained[0].table_name, 'Rolling back historical DDL must not drop runtime tables.');
+    assert.ok(await User.findByPk(preservedUser.id), 'Historical rollback must not drop runtime application rows.');
 
     const up = runMigration('up');
     assert.equal(up.status, 0, `${up.stdout}\n${up.stderr}`);

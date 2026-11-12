@@ -9,6 +9,7 @@ import { PORT, MEDIA_ROOT, CORS_ALLOWED_ORIGINS, DEBUG } from './src/config/env.
 import sequelize, { connectDB } from './src/config/database.js';
 import models, { User, Skill, CareerInterest, Internship, DataSource } from './src/models/index.js';
 import { hashPassword } from './src/services/authService.js';
+import { routeErrorResponse } from './src/utils/routeErrors.js';
 
 // Route imports
 import authRoutes from './src/routes/auth.js';
@@ -122,15 +123,8 @@ app.use('/api/v1/admin', adminRoutes);
 
 // Global Error Handler
 app.use((err, req, res, next) => {
-  console.error('[Error]', {
-    name: err?.name || 'Error',
-    code: err?.original?.code || err?.parent?.code || err?.code,
-    path: req.path,
-  });
-  const status = err.status || 500;
-  return res.status(status).json({
-    detail: status >= 500 ? 'Internal server error.' : (err.message || 'Request failed.'),
-  });
+  const mapped = routeErrorResponse(err, 'Internal server error.');
+  return res.status(mapped.status).json({ detail: mapped.detail });
 });
 
 // -------------------------------------------------------------

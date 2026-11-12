@@ -1,10 +1,10 @@
 import express from 'express';
+import { sendRouteError } from '../utils/routeErrors.js';
 import { Op } from 'sequelize';
 import { User, StudentProfile } from '../models/index.js';
 import { authenticateUser, registerStudent, hashPassword, comparePassword, generateTokens, verifyToken } from '../services/authService.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
-import { databaseErrorResponse } from '../utils/transactions.js';
 
 const router = express.Router();
 
@@ -17,9 +17,7 @@ router.post('/register/', async (req, res) => {
     const result = await registerStudent({ email, password, username, full_name });
     return res.status(201).json(result);
   } catch (err) {
-    if (err.status) return res.status(err.status).json({ detail: err.message || 'Registration failed.' });
-    const mapped = databaseErrorResponse(err);
-    return res.status(mapped.status).json({ detail: mapped.status === 500 ? 'Registration could not be completed.' : mapped.detail });
+    return sendRouteError(res, err, 'Registration could not be completed.');
   }
 });
 
@@ -32,7 +30,7 @@ router.post('/login/', async (req, res) => {
     const result = await authenticateUser(email, password);
     return res.status(200).json(result);
   } catch (err) {
-    return res.status(err.status || 401).json({ detail: err.message || 'Invalid credentials.' });
+    return sendRouteError(res, err, 'Login could not be completed.');
   }
 });
 
@@ -194,7 +192,7 @@ router.patch('/me/', requireAuth, upload.single('profile_photo'), async (req, re
       date_joined: user.date_joined,
     });
   } catch (err) {
-    return res.status(400).json({ detail: err.message || 'Update failed.' });
+    return sendRouteError(res, err, 'The account update could not be completed.');
   }
 });
 
@@ -238,7 +236,7 @@ router.get('/admin/pending-staff/', requireAuth, requireAdmin, async (req, res) 
     });
     return res.status(200).json(staff);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -256,7 +254,7 @@ router.post('/admin/approve-staff/:id/', requireAuth, requireAdmin, async (req, 
     await user.save();
     return res.status(200).json({ message: 'Staff member approved successfully.', user });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 

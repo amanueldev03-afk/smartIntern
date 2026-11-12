@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendRouteError } from '../utils/routeErrors.js';
 import { CampusLogistics, User, StudentProfile } from '../models/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { generateDeanScoreRosterTemplate } from '../services/excelGenerator.js';
@@ -37,7 +38,7 @@ router.get('/dorm/forwarded-letters/', requireAuth, async (req, res) => {
 
     return res.status(200).json(results);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -73,7 +74,7 @@ router.get('/student-dean/forwarded-letters/', requireAuth, async (req, res) => 
 
     return res.status(200).json(results);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -93,7 +94,7 @@ router.get('/student/me/', requireAuth, async (req, res) => {
       academic_year: 4,
     });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -127,7 +128,7 @@ const excelRosterHandler = async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="UIL_Score_Roster_${dept.replace(/\s+/g, '_')}_Year${year}.xlsx"`);
     return res.send(buffer);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 };
 

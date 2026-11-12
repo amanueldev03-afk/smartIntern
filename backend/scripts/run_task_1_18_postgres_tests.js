@@ -29,19 +29,25 @@ function runTests() {
   const testFiles = [
     'tests/transactions.integration.test.js',
     'tests/migrations.integration.test.js',
+    'tests/runtimeSchema.integration.test.js',
     'tests/businessTransactions.integration.test.js',
+    'tests/httpTransactions.integration.test.js',
   ];
-  const child = spawnSync(process.execPath, ['--test', '--test-concurrency=1', ...testFiles], {
-    cwd: backendDir,
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      TASK_1_18_TEST_SCHEMA: schema,
-      TASK_1_18_TEST_RUN_ID: runId,
-    },
-  });
-  if (child.error) throw child.error;
-  return interrupted ? 130 : (child.status ?? 1);
+  const env = {
+    ...process.env,
+    TASK_1_18_TEST_SCHEMA: schema,
+    TASK_1_18_TEST_RUN_ID: runId,
+  };
+  for (const testFile of testFiles) {
+    const child = spawnSync(process.execPath, ['--test', '--test-concurrency=1', testFile], {
+      cwd: backendDir,
+      stdio: 'inherit',
+      env,
+    });
+    if (child.error) throw child.error;
+    if (interrupted || child.status !== 0) return interrupted ? 130 : (child.status ?? 1);
+  }
+  return 0;
 }
 
 async function cleanupOwnedSchema() {
@@ -63,6 +69,17 @@ async function cleanupOwnedSchema() {
       || rows[0].run_id !== runId
       || schema === 'public') {
     throw new Error('Refusing to clean up: test schema ownership/safety verification failed.');
+  }
+
+  const [extensions] = await sequelize.query(`SELECT extension_row.extname
+    FROM pg_extension AS extension_row
+    JOIN pg_namespace AS extension_namespace ON extension_namespace.oid = extension_row.extnamespace
+    WHERE extension_namespace.nspname = :schema AND extension_row.extname = 'pg_trgm'`, {
+    replacements: { schema },
+  });
+  if (extensions.length) {
+    await sequelize.query('DROP EXTENSION pg_trgm CASCADE');
+    console.log('[Task 1.18] Removed pg_trgm installed by this run in its isolated schema.');
   }
 
   await sequelize.query(`DROP SCHEMA ${quotedSchema} CASCADE`);

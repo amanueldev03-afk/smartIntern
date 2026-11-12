@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendRouteError, routeErrorResponse } from '../utils/routeErrors.js';
 import crypto from 'crypto';
 import sequelize from '../config/database.js';
 import { CampusLogistics, User } from '../models/index.js';
@@ -94,7 +95,7 @@ router.get('/', requireAuth, async (req, res) => {
     }
     return res.status(200).json(items);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -106,7 +107,7 @@ router.get('/meal-cards/', requireAuth, async (req, res) => {
     const items = await CampusLogistics.findAll({ order: [['created_at', 'DESC']] });
     return res.status(200).json(items.map(formatLogistics));
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -140,7 +141,7 @@ router.post('/:id/activate-meal-card/', requireAuth, requireRole('admin', 'stude
     await item.save();
     return res.status(200).json(formatLogistics(item));
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -168,7 +169,8 @@ router.post('/verify-qr/', requireAuth, async (req, res) => {
       payload: parsed,
     });
   } catch (err) {
-    return res.status(400).json({ valid: false, detail: err.message });
+    const mapped = routeErrorResponse(err, 'The submitted request could not be validated.');
+    return res.status(mapped.status).json({ valid: false, detail: mapped.detail });
   }
 });
 
@@ -215,7 +217,7 @@ router.get('/dorm-rooms/', requireAuth, async (req, res) => {
       total_rooms_with_occupants: rooms.filter(r => r.occupied_beds > 0).length,
     });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -243,7 +245,7 @@ router.post('/:id/assign-dorm/', requireAuth, async (req, res) => {
     await item.save();
     return res.status(200).json(formatLogistics(item));
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -260,7 +262,7 @@ router.post('/:id/return-key/', requireAuth, async (req, res) => {
     await item.save();
     return res.status(200).json(formatLogistics(item));
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -284,7 +286,7 @@ router.post('/:id/dean-sign/', requireAuth, async (req, res) => {
     await item.save();
     return res.status(200).json(formatLogistics(item));
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -296,7 +298,7 @@ router.get('/pass/', requireAuth, async (req, res) => {
     const item = await resolveLogisticsRecord(req.user);
     return res.status(200).json(formatLogistics(item));
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -314,7 +316,7 @@ router.get('/clearance/', requireAuth, async (req, res) => {
       logistics: formatLogistics(item),
     });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -332,7 +334,7 @@ router.get('/:id/', requireAuth, async (req, res) => {
     if (!item) return res.status(404).json({ detail: 'Logistics record not found.' });
     return res.status(200).json(formatLogistics(item));
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 

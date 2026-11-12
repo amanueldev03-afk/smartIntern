@@ -1,4 +1,5 @@
 import express from 'express';
+import { sendRouteError } from '../utils/routeErrors.js';
 import path from 'path';
 import { User, StudentProfile, Skill, CareerInterest, CV, StudentSkill, StudentInterest } from '../models/index.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -45,7 +46,7 @@ router.get('/me/', requireAuth, async (req, res) => {
       updated_at: profile.updated_at,
     });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -92,7 +93,7 @@ router.patch('/me/', requireAuth, async (req, res) => {
       updated_at: profile.updated_at,
     });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -112,7 +113,7 @@ router.get('/me/preferences/', requireAuth, async (req, res) => {
       availability_immediately: Boolean(profile.availability_immediately),
     });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -145,7 +146,7 @@ router.patch('/me/preferences/', requireAuth, async (req, res) => {
       availability_immediately: Boolean(profile.availability_immediately),
     });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -158,7 +159,7 @@ router.get('/me/skills/', requireAuth, async (req, res) => {
     const skills = await profile.getSkills();
     return res.status(200).json(skills);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -185,7 +186,7 @@ router.post('/me/skills/', requireAuth, async (req, res) => {
     }
     return res.status(400).json({ detail: 'Skill not provided or could not be created.' });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -201,7 +202,7 @@ router.delete('/me/skills/', requireAuth, async (req, res) => {
     }
     return res.status(204).send();
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -213,7 +214,7 @@ router.get('/skills/choices/', async (req, res) => {
     const skills = await Skill.findAll({ where: { is_active: true }, limit: 100 });
     return res.status(200).json(skills);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -226,7 +227,7 @@ router.get('/me/interests/', requireAuth, async (req, res) => {
     const interests = await profile.getInterests();
     return res.status(200).json(interests);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -252,7 +253,7 @@ router.post('/me/interests/', requireAuth, async (req, res) => {
     }
     return res.status(400).json({ detail: 'Interest not provided.' });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -267,7 +268,7 @@ router.delete('/me/interests/', requireAuth, async (req, res) => {
     }
     return res.status(204).send();
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -279,7 +280,7 @@ router.get('/interests/choices/', async (req, res) => {
     const choices = await CareerInterest.findAll({ where: { is_active: true }, limit: 100 });
     return res.status(200).json(choices);
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -353,7 +354,7 @@ const handleResumeUpload = async (req, res) => {
       message: 'CV uploaded. Processing in background.',
     });
   } catch (err) {
-    return res.status(400).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 };
 
@@ -383,7 +384,7 @@ router.get('/me/resume/', requireAuth, async (req, res) => {
       extracted_data: cv.extracted_data || {},
     });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -411,7 +412,7 @@ router.get('/cv/status/', requireAuth, async (req, res) => {
       error_message: cv.error_message,
     });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -436,7 +437,7 @@ router.get('/cv/:id/status/', requireAuth, async (req, res) => {
       error_message: cv.error_message,
     });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
@@ -492,7 +493,7 @@ router.get('/', requireAuth, async (req, res) => {
       updated_at: profile.updated_at,
     });
   } catch (err) {
-    return res.status(500).json({ detail: err.message });
+    return sendRouteError(res, err, 'The request could not be completed.');
   }
 });
 
