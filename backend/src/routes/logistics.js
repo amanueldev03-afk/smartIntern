@@ -3,8 +3,9 @@ import { sendRouteError, routeErrorResponse } from '../utils/routeErrors.js';
 import crypto from 'crypto';
 import sequelize from '../config/database.js';
 import { CampusLogistics, User } from '../models/index.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requireRole, requireDean, requireDormStaff, requireStudentUnion } from '../middleware/auth.js';
 import { generateSignedQR, verifyPayload } from '../services/qrGenerator.js';
+import { withTransaction } from '../utils/transactions.js';
 
 const router = express.Router();
 
@@ -102,7 +103,7 @@ router.get('/', requireAuth, async (req, res) => {
 // -------------------------------------------------------------
 // GET /v1/logistics/meal-cards/
 // -------------------------------------------------------------
-router.get('/meal-cards/', requireAuth, async (req, res) => {
+router.get('/meal-cards/', requireAuth, requireStudentUnion, async (req, res) => {
   try {
     const items = await CampusLogistics.findAll({ order: [['created_at', 'DESC']] });
     return res.status(200).json(items.map(formatLogistics));
@@ -177,7 +178,7 @@ router.post('/verify-qr/', requireAuth, async (req, res) => {
 // -------------------------------------------------------------
 // GET /v1/logistics/dorm-rooms/
 // -------------------------------------------------------------
-router.get('/dorm-rooms/', requireAuth, async (req, res) => {
+router.get('/dorm-rooms/', requireAuth, requireDormStaff, async (req, res) => {
   try {
     const items = await CampusLogistics.findAll();
     const rooms = [
@@ -224,25 +225,33 @@ router.get('/dorm-rooms/', requireAuth, async (req, res) => {
 // -------------------------------------------------------------
 // POST /v1/logistics/:id/assign-dorm/
 // -------------------------------------------------------------
-router.post('/:id/assign-dorm/', requireAuth, async (req, res) => {
+router.post('/:id/assign-dorm/', requireAuth, requireDormStaff, async (req, res) => {
   try {
-    const item = await CampusLogistics.findByPk(req.params.id);
-    if (!item) return res.status(404).json({ detail: 'Logistics record not found.' });
-
     const { dorm_block, dorm_room, dorm_bed_number, issue_key } = req.body;
-    item.dorm_block = dorm_block || item.dorm_block;
-    item.dorm_room = dorm_room || item.dorm_room;
-    item.dorm_bed_number = dorm_bed_number || item.dorm_bed_number;
-    item.dorm_status = issue_key ? 'KEY_ISSUED' : 'ASSIGNED';
+    const item = await withTransaction(async (transaction) => {
+      const record = await CampusLogistics.findByPk(req.params.id, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+      if (!record) return null;
 
-    if (issue_key) {
-      item.key_issued = true;
-      item.key_issued_at = new Date();
-      item.key_issued_by_id = req.user.id;
-      item.key_issued_by_name = req.user.getFullName();
-    }
+      record.dorm_block = dorm_block || record.dorm_block;
+      record.dorm_room = dorm_room || record.dorm_room;
+      record.dorm_bed_number = dorm_bed_number || record.dorm_bed_number;
+      record.dorm_status = issue_key ? 'KEY_ISSUED' : 'ASSIGNED';
 
-    await item.save();
+      if (issue_key) {
+        record.key_issued = true;
+        record.key_issued_at = new Date();
+        record.key_issued_by_id = req.user.id;
+        record.key_issued_by_name = req.user.getFullName();
+      }
+
+      await record.save({ transaction });
+      return record;
+    });
+
+    if (!item) return res.status(404).json({ detail: 'Logistics record not found.' });
     return res.status(200).json(formatLogistics(item));
   } catch (err) {
     return sendRouteError(res, err, 'The request could not be completed.');
@@ -252,14 +261,22 @@ router.post('/:id/assign-dorm/', requireAuth, async (req, res) => {
 // -------------------------------------------------------------
 // POST /v1/logistics/:id/return-key/
 // -------------------------------------------------------------
-router.post('/:id/return-key/', requireAuth, async (req, res) => {
+router.post('/:id/return-key/', requireAuth, requireDormStaff, async (req, res) => {
   try {
-    const item = await CampusLogistics.findByPk(req.params.id);
-    if (!item) return res.status(404).json({ detail: 'Logistics record not found.' });
+    const item = await withTransaction(async (transaction) => {
+      const record = await CampusLogistics.findByPk(req.params.id, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+      if (!record) return null;
 
-    item.dorm_status = 'RETURNED';
-    item.key_issued = false;
-    await item.save();
+      record.dorm_status = 'RETURNED';
+      record.key_issued = false;
+      await record.save({ transaction });
+      return record;
+    });
+
+    if (!item) return res.status(404).json({ detail: 'Logistics record not found.' });
     return res.status(200).json(formatLogistics(item));
   } catch (err) {
     return sendRouteError(res, err, 'The request could not be completed.');
@@ -269,22 +286,49 @@ router.post('/:id/return-key/', requireAuth, async (req, res) => {
 // -------------------------------------------------------------
 // POST /v1/logistics/:id/dean-sign/
 // -------------------------------------------------------------
-router.post('/:id/dean-sign/', requireAuth, async (req, res) => {
+router.post('/:id/dean-sign/', requireAuth, requireDean, async (req, res) => {
   try {
-    const item = await CampusLogistics.findByPk(req.params.id);
-    if (!item) return res.status(404).json({ detail: 'Logistics record not found.' });
+    const userRole = (req.user.role || '').toLowerCase();
+    const isSuper = Boolean(req.user.is_superuser || req.user.is_staff);
 
-    item.dean_approved = true;
-    item.dean_signed_by_id = req.user.id;
-    item.dean_signed_by_name = req.user.getFullName();
-    item.dean_signed_at = new Date();
-    item.signature_verified = true;
+    const result = await withTransaction(async (transaction) => {
+      const record = await CampusLogistics.findByPk(req.params.id, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+      if (!record) {
+        return { notFound: true };
+      }
 
-    const signaturePayload = `${item.id}-${item.student_id}-${req.user.id}-${item.dean_signed_at.toISOString()}`;
-    item.dean_signature_hash = crypto.createHash('sha256').update(signaturePayload).digest('hex');
+      // Check academic jurisdiction / department boundary if dean specifies department
+      if (userRole !== 'admin' && !isSuper && req.user.department) {
+        const student = await User.findByPk(record.student_id, { transaction });
+        if (student && student.department && student.department.toLowerCase().trim() !== req.user.department.toLowerCase().trim()) {
+          return { forbidden: true, reason: 'You do not have institutional authority to approve clearances outside your academic department.' };
+        }
+      }
 
-    await item.save();
-    return res.status(200).json(formatLogistics(item));
+      record.dean_approved = true;
+      record.dean_signed_by_id = req.user.id;
+      record.dean_signed_by_name = req.user.getFullName();
+      record.dean_signed_at = new Date();
+      record.signature_verified = true;
+
+      const signaturePayload = `${record.id}-${record.student_id}-${req.user.id}-${record.dean_signed_at.toISOString()}`;
+      record.dean_signature_hash = crypto.createHash('sha256').update(signaturePayload).digest('hex');
+
+      await record.save({ transaction });
+      return { record };
+    });
+
+    if (result.notFound) {
+      return res.status(404).json({ detail: 'Logistics record not found.' });
+    }
+    if (result.forbidden) {
+      return res.status(403).json({ detail: result.reason });
+    }
+
+    return res.status(200).json(formatLogistics(result.record));
   } catch (err) {
     return sendRouteError(res, err, 'The request could not be completed.');
   }
@@ -332,6 +376,16 @@ router.get('/:id/', requireAuth, async (req, res) => {
     }
     const item = await CampusLogistics.findByPk(req.params.id);
     if (!item) return res.status(404).json({ detail: 'Logistics record not found.' });
+
+    const isOwner = String(item.student_id) === String(req.user.id);
+    const userRole = (req.user.role || '').toLowerCase();
+    const isPrivileged = ['admin', 'dean', 'dept_dean', 'student_union', 'union', 'dorm_admin', 'dorm', 'dorm_staff', 'proctor', 'uil', 'uil_officer', 'staff'].includes(userRole)
+      || Boolean(req.user.is_superuser || req.user.is_staff);
+
+    if (!isOwner && !isPrivileged) {
+      return res.status(403).json({ detail: 'You do not have permission to access this logistics record.' });
+    }
+
     return res.status(200).json(formatLogistics(item));
   } catch (err) {
     return sendRouteError(res, err, 'The request could not be completed.');

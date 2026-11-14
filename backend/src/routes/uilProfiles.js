@@ -1,7 +1,7 @@
 import express from 'express';
 import { sendRouteError } from '../utils/routeErrors.js';
 import { CampusLogistics, User, StudentProfile } from '../models/index.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireRole, requireDean, requireUIL } from '../middleware/auth.js';
 import { generateDeanScoreRosterTemplate } from '../services/excelGenerator.js';
 
 const router = express.Router();
@@ -9,7 +9,7 @@ const router = express.Router();
 // -------------------------------------------------------------
 // GET /v1/uil-profiles/dorm/forwarded-letters/
 // -------------------------------------------------------------
-router.get('/dorm/forwarded-letters/', requireAuth, async (req, res) => {
+router.get('/dorm/forwarded-letters/', requireAuth, requireRole('admin', 'dean', 'dept_dean', 'dorm_admin', 'dorm', 'proctor', 'uil', 'uil_officer', 'staff'), async (req, res) => {
   try {
     const items = await CampusLogistics.findAll({
       where: { dean_approved: true }
@@ -45,7 +45,7 @@ router.get('/dorm/forwarded-letters/', requireAuth, async (req, res) => {
 // -------------------------------------------------------------
 // GET /v1/uil-profiles/student-dean/forwarded-letters/
 // -------------------------------------------------------------
-router.get('/student-dean/forwarded-letters/', requireAuth, async (req, res) => {
+router.get('/student-dean/forwarded-letters/', requireAuth, requireRole('admin', 'dean', 'dept_dean', 'student_union', 'union', 'uil', 'uil_officer', 'staff'), async (req, res) => {
   try {
     const items = await CampusLogistics.findAll({
       where: { dean_approved: true }
@@ -132,9 +132,9 @@ const excelRosterHandler = async (req, res) => {
   }
 };
 
-router.get('/departments/roster-excel/', requireAuth, excelRosterHandler);
-router.get('/export-excel/', requireAuth, excelRosterHandler);
-router.get('/roster-excel/', requireAuth, excelRosterHandler);
+router.get('/departments/roster-excel/', requireAuth, requireRole('admin', 'dean', 'dept_dean', 'uil', 'uil_officer'), excelRosterHandler);
+router.get('/export-excel/', requireAuth, requireRole('admin', 'dean', 'dept_dean', 'uil', 'uil_officer'), excelRosterHandler);
+router.get('/roster-excel/', requireAuth, requireRole('admin', 'dean', 'dept_dean', 'uil', 'uil_officer'), excelRosterHandler);
 
 // -------------------------------------------------------------
 // Student & Staff Chat Stubs

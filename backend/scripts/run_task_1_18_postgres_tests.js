@@ -32,6 +32,7 @@ function runTests() {
     'tests/runtimeSchema.integration.test.js',
     'tests/businessTransactions.integration.test.js',
     'tests/httpTransactions.integration.test.js',
+    'tests/securityAuthorization.integration.test.js',
   ];
   const env = {
     ...process.env,

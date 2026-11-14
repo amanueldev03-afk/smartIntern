@@ -2,7 +2,16 @@ import express from 'express';
 import { sendRouteError } from '../utils/routeErrors.js';
 import { Op } from 'sequelize';
 import { User, StudentProfile } from '../models/index.js';
-import { authenticateUser, registerStudent, hashPassword, comparePassword, generateTokens, verifyToken } from '../services/authService.js';
+import {
+  authenticateUser,
+  registerStudent,
+  hashPassword,
+  comparePassword,
+  generateTokens,
+  verifyToken,
+  generateEmailVerificationToken,
+  verifyEmailVerificationToken,
+} from '../services/authService.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
 
@@ -95,28 +104,15 @@ router.post('/password-reset-confirm/:uid/:token/', async (req, res) => {
 // GET /api/auth/verify-email/:uid/:token/
 // -------------------------------------------------------------
 router.get('/verify-email/:uid/:token/', async (req, res) => {
-  const { uid } = req.params;
+  const { uid, token } = req.params;
   try {
-    // Decode uid if integer or base64
-    let user = await User.findByPk(uid);
-    if (!user) {
-      try {
-        const decodedStr = Buffer.from(uid, 'base64').toString('ascii');
-        user = await User.findByPk(decodedStr);
-      } catch {}
-    }
-    if (user) {
-      user.is_email_verified = true;
-      user.is_active = true;
-      await user.save();
-    }
-    return res.status(200).json({
-      message: 'Email verified successfully. You can now log in.'
-    });
+    const result = await verifyEmailVerificationToken(uid, token);
+    return res.status(200).json(result);
   } catch (err) {
-    return res.status(200).json({
-      message: 'Email verification link processed.'
-    });
+    if (err.status) {
+      return res.status(err.status).json({ detail: err.message });
+    }
+    return sendRouteError(res, err, 'Email verification could not be completed.');
   }
 });
 
@@ -200,7 +196,30 @@ router.patch('/me/', requireAuth, upload.single('profile_photo'), async (req, re
 // POST /api/accounts/resend-verification/
 // -------------------------------------------------------------
 router.post('/resend-verification/', async (req, res) => {
-  return res.status(200).json({ message: 'Verification email resent successfully.' });
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ detail: 'Email is required.' });
+    }
+    const user = await User.findOne({ where: { email: email.toLowerCase().trim() } });
+    if (!user) {
+      return res.status(200).json({
+        message: 'If an account exists with this email, a verification link has been sent.'
+      });
+    }
+    if (user.is_email_verified) {
+      return res.status(400).json({ detail: 'Email has already been verified.' });
+    }
+    const token = generateEmailVerificationToken(user);
+    const uid = Buffer.from(user.id).toString('base64');
+    return res.status(200).json({
+      message: 'Verification email resent successfully.',
+      uid,
+      token,
+    });
+  } catch (err) {
+    return sendRouteError(res, err, 'The request could not be completed.');
+  }
 });
 
 // -------------------------------------------------------------
@@ -252,7 +271,23 @@ router.post('/admin/approve-staff/:id/', requireAuth, requireAdmin, async (req, 
     user.is_approved = true;
     user.is_active = true;
     await user.save();
-    return res.status(200).json({ message: 'Staff member approved successfully.', user });
+    return res.status(200).json({
+      message: 'Staff member approved successfully.',
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        role: (user.role || 'student').toLowerCase(),
+        department: user.department,
+        university_name: user.university_name,
+        staff_id_number: user.staff_id_number,
+        is_approved: user.is_approved,
+        is_active: user.is_active,
+        created_at: user.created_at,
+      }
+    });
   } catch (err) {
     return sendRouteError(res, err, 'The request could not be completed.');
   }

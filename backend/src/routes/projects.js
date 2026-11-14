@@ -1,9 +1,11 @@
 import express from 'express';
 import { sendRouteError } from '../utils/routeErrors.js';
+import { Op } from 'sequelize';
 import { ProjectTeam, TeamMember, ProjectTeamMessage, WeeklyLogbook, User } from '../models/index.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
 import { checkLogbookPlagiarism } from '../services/plagiarismChecker.js';
+import { verifyTeamAccess } from '../middleware/teamAuth.js';
 
 import sequelize from '../config/database.js';
 import { databaseErrorResponse, withTransaction } from '../utils/transactions.js';
@@ -148,8 +150,11 @@ router.get('/my-channel/', requireAuth, async (req, res) => {
 // -------------------------------------------------------------
 router.post('/teams/:teamId/srs/upload/', requireAuth, upload.single('srs_document'), async (req, res) => {
   try {
-    const team = await ProjectTeam.findByPk(req.params.teamId);
-    if (!team) return res.status(404).json({ detail: 'Team not found.' });
+    const access = await verifyTeamAccess(req.params.teamId, req.user, { requireMemberOnly: true });
+    if (access.status !== 200) {
+      return res.status(access.status).json({ detail: access.detail });
+    }
+    const team = access.team;
 
     if (req.file) {
       team.srs_document = `srs_docs/${req.file.filename}`;
@@ -172,8 +177,11 @@ router.post('/teams/:teamId/srs/upload/', requireAuth, upload.single('srs_docume
 // -------------------------------------------------------------
 router.post('/teams/:teamId/srs/review/', requireAuth, requireRole('advisor', 'admin'), async (req, res) => {
   try {
-    const team = await ProjectTeam.findByPk(req.params.teamId);
-    if (!team) return res.status(404).json({ detail: 'Team not found.' });
+    const access = await verifyTeamAccess(req.params.teamId, req.user, { requireAdvisorOnly: true });
+    if (access.status !== 200) {
+      return res.status(access.status).json({ detail: access.detail });
+    }
+    const team = access.team;
 
     const { decision, feedback } = req.body;
     team.srs_status = decision === 'APPROVED' ? 'APPROVED' : 'REVISION_REQUIRED';
@@ -196,6 +204,11 @@ router.post('/teams/:teamId/srs/review/', requireAuth, requireRole('advisor', 'a
 // -------------------------------------------------------------
 router.get('/teams/:teamId/messages/', requireAuth, async (req, res) => {
   try {
+    const access = await verifyTeamAccess(req.params.teamId, req.user);
+    if (access.status !== 200) {
+      return res.status(access.status).json({ detail: access.detail });
+    }
+
     const messages = await ProjectTeamMessage.findAll({
       where: { team_id: req.params.teamId },
       include: [{ model: User, as: 'sender' }],
@@ -223,6 +236,11 @@ router.get('/teams/:teamId/messages/', requireAuth, async (req, res) => {
 
 router.post('/teams/:teamId/messages/', requireAuth, async (req, res) => {
   try {
+    const access = await verifyTeamAccess(req.params.teamId, req.user);
+    if (access.status !== 200) {
+      return res.status(access.status).json({ detail: access.detail });
+    }
+
     const { content, message: bodyMessage, message_type = 'GENERAL' } = req.body;
     const text = content || bodyMessage;
     if (!text) return res.status(400).json({ detail: 'Content is required.' });
@@ -258,7 +276,32 @@ router.post('/teams/:teamId/messages/', requireAuth, async (req, res) => {
 // -------------------------------------------------------------
 router.get('/teams/', requireAuth, async (req, res) => {
   try {
-    const teams = await ProjectTeam.findAll({ order: [['created_at', 'DESC']] });
+    const userRole = (req.user.role || '').toLowerCase();
+    const isAdmin = userRole === 'admin' || Boolean(req.user.is_superuser || req.user.is_staff);
+
+    let teams;
+    if (isAdmin) {
+      teams = await ProjectTeam.findAll({ order: [['created_at', 'DESC']] });
+    } else if (userRole === 'advisor') {
+      teams = await ProjectTeam.findAll({
+        where: { assigned_advisor_id: req.user.id },
+        order: [['created_at', 'DESC']],
+      });
+    } else {
+      const memberships = await TeamMember.findAll({
+        where: { student_id: req.user.id },
+        attributes: ['team_id'],
+      });
+      const teamIds = memberships.map(m => m.team_id).filter(Boolean);
+      if (teamIds.length === 0) {
+        return res.status(200).json([]);
+      }
+      teams = await ProjectTeam.findAll({
+        where: { id: { [Op.in]: teamIds } },
+        order: [['created_at', 'DESC']],
+      });
+    }
+
     const formatted = await Promise.all(teams.map(t => formatTeam(t, req)));
     return res.status(200).json(formatted);
   } catch (err) {
@@ -271,9 +314,11 @@ router.get('/teams/', requireAuth, async (req, res) => {
 // -------------------------------------------------------------
 router.get('/teams/:id/', requireAuth, async (req, res) => {
   try {
-    const team = await ProjectTeam.findByPk(req.params.id);
-    if (!team) return res.status(404).json({ detail: 'Team not found.' });
-    const formatted = await formatTeam(team, req);
+    const access = await verifyTeamAccess(req.params.id, req.user);
+    if (access.status !== 200) {
+      return res.status(access.status).json({ detail: access.detail });
+    }
+    const formatted = await formatTeam(access.team, req);
     return res.status(200).json(formatted);
   } catch (err) {
     return sendRouteError(res, err, 'The request could not be completed.');
@@ -285,8 +330,20 @@ router.get('/teams/:id/', requireAuth, async (req, res) => {
 // -------------------------------------------------------------
 router.get('/logbooks/', requireAuth, async (req, res) => {
   try {
+    const userRole = (req.user.role || '').toLowerCase();
+    const isAdmin = userRole === 'admin' || Boolean(req.user.is_superuser || req.user.is_staff);
+
+    let whereClause = { student_id: req.user.id };
+    if (isAdmin) {
+      whereClause = {};
+      if (req.query.student_id) whereClause.student_id = req.query.student_id;
+    } else if (userRole === 'advisor') {
+      whereClause = { academic_advisor_id: req.user.id };
+      if (req.query.student_id) whereClause.student_id = req.query.student_id;
+    }
+
     const logbooks = await WeeklyLogbook.findAll({
-      where: { student_id: req.user.id },
+      where: whereClause,
       order: [['week_number', 'DESC']]
     });
     return res.status(200).json(logbooks);
@@ -297,25 +354,65 @@ router.get('/logbooks/', requireAuth, async (req, res) => {
 
 router.post('/logbooks/', requireAuth, async (req, res) => {
   try {
+    const studentId = req.user.id;
+    const tasksPlanned = typeof req.body.tasks_planned === 'string' ? req.body.tasks_planned : '';
     const tasksExecuted = req.body.tasks_executed || req.body.content || req.body.tasks_completed || '';
-    const weekNumber = Number(req.body.week_number) || 1;
+    const challengesFaced = req.body.challenges_faced || req.body.blockers || '';
+    const weekNumber = Math.max(1, parseInt(req.body.week_number, 10) || 1);
+
+    let gitCommitUrls = [];
+    if (Array.isArray(req.body.git_commit_urls)) {
+      gitCommitUrls = req.body.git_commit_urls.map(u => String(u)).filter(Boolean);
+    }
+
+    let projectTeamId = req.body.project_team_id || req.body.team_id || null;
+    let resolvedAdvisorId = null;
+
+    if (projectTeamId) {
+      const membership = await TeamMember.findOne({
+        where: { team_id: projectTeamId, student_id: studentId },
+      });
+      if (!membership && !req.user.is_superuser && req.user.role !== 'admin') {
+        return res.status(403).json({ detail: 'You are not a member of the specified project team.' });
+      }
+      const team = await ProjectTeam.findByPk(projectTeamId);
+      if (team && team.assigned_advisor_id) {
+        resolvedAdvisorId = team.assigned_advisor_id;
+      }
+    } else {
+      const membership = await TeamMember.findOne({ where: { student_id: studentId } });
+      if (membership) {
+        projectTeamId = membership.team_id;
+        const team = await ProjectTeam.findByPk(projectTeamId);
+        if (team && team.assigned_advisor_id) {
+          resolvedAdvisorId = team.assigned_advisor_id;
+        }
+      }
+    }
 
     let plagiarismResult = { similarity_score: 0.0, is_flagged: false, matched_snippet: '' };
     try {
-      plagiarismResult = await checkLogbookPlagiarism(tasksExecuted, req.user.id, weekNumber);
+      plagiarismResult = await checkLogbookPlagiarism(tasksExecuted, studentId, weekNumber);
     } catch (plagErr) {
       console.warn('[Logbook] Plagiarism check error:', plagErr.message);
     }
 
+    // Explicitly pick allowed attributes — no mass-assignment of advisor_approved or advisor_feedback
     const logbook = await WeeklyLogbook.create({
-      ...req.body,
-      student_id: req.user.id,
+      project_team_id: projectTeamId,
+      student_id: studentId,
+      academic_advisor_id: resolvedAdvisorId,
+      company_mentor_id: null,
       week_number: weekNumber,
+      tasks_planned: tasksPlanned,
       tasks_executed: tasksExecuted,
+      challenges_faced: challengesFaced,
+      git_commit_urls: gitCommitUrls,
       similarity_score: plagiarismResult.similarity_score,
       is_flagged: plagiarismResult.is_flagged,
       matched_snippet: plagiarismResult.matched_snippet,
       advisor_approved: false,
+      advisor_feedback: '',
     });
     return res.status(201).json(logbook);
   } catch (err) {

@@ -71,3 +71,8 @@ export const requireRole = (...roles) => {
 
 export const requireAdmin = requireRole('admin');
 export const requireStudent = requireRole('student');
+export const requireDean = requireRole('dean', 'dept_dean', 'admin');
+export const requireDormStaff = requireRole('dorm_admin', 'dorm', 'dorm_staff', 'proctor', 'admin', 'staff');
+export const requireStudentUnion = requireRole('student_union', 'union', 'admin', 'staff');
+export const requireUIL = requireRole('uil', 'uil_officer', 'admin', 'staff');
+export const requireAdvisor = requireRole('advisor', 'admin');
