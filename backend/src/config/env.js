@@ -39,6 +39,10 @@ export const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379/0';
 export const JWT_SECRET = process.env.JWT_SECRET || process.env.SECRET_KEY || 'smartintern-secret-key-development';
 export const JWT_ACCESS_EXPIRATION = process.env.JWT_ACCESS_EXPIRATION || '2h';
 export const JWT_REFRESH_EXPIRATION = process.env.JWT_REFRESH_EXPIRATION || '7d';
+export const EMAIL_VERIFICATION_SECRET = process.env.EMAIL_VERIFICATION_SECRET
+  || process.env.JWT_SECRET
+  || process.env.SECRET_KEY
+  || (process.env.NODE_ENV === 'production' ? null : 'smartintern-email-verification-secret-dev');
 
 // Email SMTP Settings
 export const EMAIL_HOST = process.env.EMAIL_HOST || 'smtp.gmail.com';

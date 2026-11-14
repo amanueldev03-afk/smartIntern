@@ -58,7 +58,7 @@ export const requireRole = (...roles) => {
       return res.status(401).json({ detail: 'Authentication required.' });
     }
     const userRole = (req.user.role || '').toLowerCase();
-    const isSuper = req.user.is_superuser || req.user.is_staff;
+    const isSuper = Boolean(req.user.is_superuser);
     const allowed = roles.map(r => r.toLowerCase());
 
     if (allowed.includes(userRole) || (allowed.includes('admin') && isSuper)) {
@@ -72,7 +72,7 @@ export const requireRole = (...roles) => {
 export const requireAdmin = requireRole('admin');
 export const requireStudent = requireRole('student');
 export const requireDean = requireRole('dean', 'dept_dean', 'admin');
-export const requireDormStaff = requireRole('dorm_admin', 'dorm', 'dorm_staff', 'proctor', 'admin', 'staff');
-export const requireStudentUnion = requireRole('student_union', 'union', 'admin', 'staff');
-export const requireUIL = requireRole('uil', 'uil_officer', 'admin', 'staff');
+export const requireDormStaff = requireRole('dorm_admin', 'admin');
+export const requireStudentUnion = requireRole('student_union', 'admin');
+export const requireUIL = requireRole('uil', 'uil_officer', 'admin');
 export const requireAdvisor = requireRole('advisor', 'admin');

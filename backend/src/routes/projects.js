@@ -1,11 +1,13 @@
 import express from 'express';
+import path from 'path';
 import { sendRouteError } from '../utils/routeErrors.js';
 import { Op } from 'sequelize';
-import { ProjectTeam, TeamMember, ProjectTeamMessage, WeeklyLogbook, User } from '../models/index.js';
+import { ProjectTeam, TeamMember, ProjectTeamMessage, WeeklyLogbook, User, StudentProfile } from '../models/index.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
 import { checkLogbookPlagiarism } from '../services/plagiarismChecker.js';
 import { verifyTeamAccess } from '../middleware/teamAuth.js';
+import { MEDIA_ROOT } from '../config/env.js';
 
 import sequelize from '../config/database.js';
 import { databaseErrorResponse, withTransaction } from '../utils/transactions.js';
@@ -200,6 +202,35 @@ router.post('/teams/:teamId/srs/review/', requireAuth, requireRole('advisor', 'a
 });
 
 // -------------------------------------------------------------
+// GET /v1/projects/teams/:teamId/srs/document/ (Authorized SRS Download)
+// -------------------------------------------------------------
+router.get('/teams/:teamId/srs/document/', requireAuth, async (req, res) => {
+  try {
+    const access = await verifyTeamAccess(req.params.teamId, req.user);
+    if (access.status !== 200) {
+      return res.status(access.status).json({ detail: access.detail });
+    }
+    const team = access.team;
+    if (!team.srs_document) {
+      return res.status(404).json({ detail: 'SRS document not found for this team.' });
+    }
+
+    const filePath = path.resolve(MEDIA_ROOT, team.srs_document);
+    if (!filePath.startsWith(MEDIA_ROOT)) {
+      return res.status(400).json({ detail: 'Invalid document path.' });
+    }
+
+    return res.download(filePath, `srs-${team.id}.pdf`, (err) => {
+      if (err && !res.headersSent) {
+        return res.status(404).json({ detail: 'SRS document file could not be found on server.' });
+      }
+    });
+  } catch (err) {
+    return sendRouteError(res, err, 'The request could not be completed.');
+  }
+});
+
+// -------------------------------------------------------------
 // GET & POST /v1/projects/teams/:teamId/messages/
 // -------------------------------------------------------------
 router.get('/teams/:teamId/messages/', requireAuth, async (req, res) => {
@@ -276,8 +307,12 @@ router.post('/teams/:teamId/messages/', requireAuth, async (req, res) => {
 // -------------------------------------------------------------
 router.get('/teams/', requireAuth, async (req, res) => {
   try {
+    if (!req.user.is_active) {
+      return res.status(403).json({ detail: 'User account is inactive or disabled.' });
+    }
+
     const userRole = (req.user.role || '').toLowerCase();
-    const isAdmin = userRole === 'admin' || Boolean(req.user.is_superuser || req.user.is_staff);
+    const isAdmin = userRole === 'admin' || Boolean(req.user.is_superuser);
 
     let teams;
     if (isAdmin) {
@@ -288,6 +323,13 @@ router.get('/teams/', requireAuth, async (req, res) => {
         order: [['created_at', 'DESC']],
       });
     } else {
+      if (userRole === 'student') {
+        const profile = await StudentProfile.findOne({ where: { user_id: req.user.id } });
+        if (!profile) {
+          return res.status(403).json({ detail: 'Student profile not found. Please complete profile registration before accessing project teams.' });
+        }
+      }
+
       const memberships = await TeamMember.findAll({
         where: { student_id: req.user.id },
         attributes: ['team_id'],
@@ -331,7 +373,7 @@ router.get('/teams/:id/', requireAuth, async (req, res) => {
 router.get('/logbooks/', requireAuth, async (req, res) => {
   try {
     const userRole = (req.user.role || '').toLowerCase();
-    const isAdmin = userRole === 'admin' || Boolean(req.user.is_superuser || req.user.is_staff);
+    const isAdmin = userRole === 'admin' || Boolean(req.user.is_superuser);
 
     let whereClause = { student_id: req.user.id };
     if (isAdmin) {
@@ -354,7 +396,17 @@ router.get('/logbooks/', requireAuth, async (req, res) => {
 
 router.post('/logbooks/', requireAuth, async (req, res) => {
   try {
+    if (!req.user.is_active) {
+      return res.status(403).json({ detail: 'User account is inactive or disabled.' });
+    }
+
     const studentId = req.user.id;
+    if (req.user.role === 'student') {
+      const profile = await StudentProfile.findOne({ where: { user_id: studentId } });
+      if (!profile) {
+        return res.status(403).json({ detail: 'Student profile not found. Please complete profile registration before submitting logbooks.' });
+      }
+    }
     const tasksPlanned = typeof req.body.tasks_planned === 'string' ? req.body.tasks_planned : '';
     const tasksExecuted = req.body.tasks_executed || req.body.content || req.body.tasks_completed || '';
     const challengesFaced = req.body.challenges_faced || req.body.blockers || '';

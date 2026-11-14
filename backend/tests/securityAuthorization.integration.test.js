@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { spawn } from 'child_process';
 import { createServer } from 'net';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
+import { mkdir, writeFile, unlink } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import sequelize from '../src/config/database.js';
@@ -10,6 +12,7 @@ import {
   CampusLogistics,
   ProjectTeam,
   ProjectTeamMessage,
+  StudentProfile,
   TeamMember,
   User,
   WeeklyLogbook,
@@ -17,6 +20,8 @@ import {
 import {
   generateTokens,
   generateEmailVerificationToken,
+  getEmailVerificationStateHash,
+  getEmailVerificationSecret,
 } from '../src/services/authService.js';
 
 const backendDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -24,6 +29,8 @@ const schema = process.env.TASK_1_18_TEST_SCHEMA || '';
 let serverProcess;
 let baseUrl;
 let serverOutput = '';
+const dummySrsFileName = `test-audit-srs-${crypto.randomUUID().slice(0, 8)}.pdf`;
+const dummySrsFilePath = path.join(backendDir, 'media', 'srs_docs', dummySrsFileName);
 
 async function availablePort() {
   const server = createServer();
@@ -59,9 +66,21 @@ async function createTestUser(role = 'student', overrides = {}) {
     is_active: overrides.is_active !== undefined ? overrides.is_active : true,
     is_email_verified: overrides.is_email_verified !== undefined ? overrides.is_email_verified : true,
     is_approved: overrides.is_approved !== undefined ? overrides.is_approved : true,
+    is_staff: overrides.is_staff !== undefined ? overrides.is_staff : false,
+    is_superuser: overrides.is_superuser !== undefined ? overrides.is_superuser : false,
     department: overrides.department || 'Software Engineering',
     ...overrides,
   });
+
+  // Automatically provision a student profile for students unless explicitly disabled
+  if (role === 'student' && overrides.withProfile !== false) {
+    await StudentProfile.create({
+      user_id: user.id,
+      field_of_study: 'Software Engineering',
+      university: 'Addis Ababa University',
+    });
+  }
+
   return { user, token: generateTokens(user).access };
 }
 
@@ -69,6 +88,10 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
   before(async () => {
     assert.equal(sequelize.getDialect(), 'postgres');
     assert.match(schema, /^task_1_18_test_[a-f0-9]{32}$/);
+
+    // Prepare dummy SRS document for download testing
+    await mkdir(path.join(backendDir, 'media', 'srs_docs'), { recursive: true });
+    await writeFile(dummySrsFilePath, '%PDF-1.4 security audit test SRS document content');
 
     const port = await availablePort();
     baseUrl = `http://127.0.0.1:${port}`;
@@ -93,6 +116,7 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
   });
 
   after(async () => {
+    try { await unlink(dummySrsFilePath); } catch {}
     if (serverProcess && serverProcess.exitCode === null) {
       serverProcess.kill('SIGTERM');
       await new Promise((resolve) => serverProcess.once('exit', resolve));
@@ -101,9 +125,9 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
   });
 
   // =========================================================================
-  // 1. Dean Signature Authorization
+  // 1. Dean Signature Authorization & Keyed HMAC Integrity
   // =========================================================================
-  describe('Dean signature authorization (POST /api/v1/logistics/:id/dean-sign/)', () => {
+  describe('Dean signature authorization and keyed HMAC audit fingerprint', () => {
     it('rejects unauthenticated requests with 401', async () => {
       const student = await createTestUser('student');
       const logistics = await CampusLogistics.create({ student_id: student.user.id });
@@ -122,20 +146,21 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
       assert.match(res.body.detail, /permission/i);
     });
 
-    it('rejects dorm staff or unprivileged staff attempting dean clearance with 403', async () => {
-      const dormStaff = await createTestUser('dorm_staff');
+    it('rejects generic staff attempting dean clearance with 403', async () => {
+      const staff = await createTestUser('staff', { is_staff: true });
       const student = await createTestUser('student');
       const logistics = await CampusLogistics.create({ student_id: student.user.id });
       const res = await request(`/api/v1/logistics/${logistics.id}/dean-sign/`, {
         method: 'POST',
-        token: dormStaff.token,
+        token: staff.token,
       });
       assert.equal(res.status, 403);
+      assert.match(res.body.detail, /permission/i);
     });
 
     it('rejects dean approving a record outside their academic department boundary with 403', async () => {
       const student = await createTestUser('student', { department: 'Mechanical Engineering' });
-      const dean = await createTestUser('dean', { department: 'Electrical Engineering' });
+      const dean = await createTestUser('dept_dean', { department: 'Electrical Engineering' });
       const logistics = await CampusLogistics.create({ student_id: student.user.id });
 
       const res = await request(`/api/v1/logistics/${logistics.id}/dean-sign/`, {
@@ -146,9 +171,9 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
       assert.match(res.body.detail, /academic department/i);
     });
 
-    it('allows authorized dean to sign clearance and persists valid SHA-256 signature hash', async () => {
+    it('allows authorized dept_dean to sign clearance and persists valid HMAC-SHA256 audit fingerprint', async () => {
       const student = await createTestUser('student', { department: 'Software Engineering' });
-      const dean = await createTestUser('dean', { department: 'Software Engineering' });
+      const dean = await createTestUser('dept_dean', { department: 'Software Engineering' });
       const logistics = await CampusLogistics.create({ student_id: student.user.id });
 
       const res = await request(`/api/v1/logistics/${logistics.id}/dean-sign/`, {
@@ -157,13 +182,30 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
       });
       assert.equal(res.status, 200);
       assert.equal(res.body.dean_approved, true);
-      assert.ok(res.body.dean_signature_hash.length >= 64);
+      assert.equal(res.body.dean_signature_hash.length, 64);
 
       // Verify in database
       const reloaded = await CampusLogistics.findByPk(logistics.id);
       assert.equal(reloaded.dean_approved, true);
       assert.equal(reloaded.dean_signed_by_id, dean.user.id);
       assert.equal(reloaded.dean_signature_hash, res.body.dean_signature_hash);
+    });
+
+    it('handles concurrent dean sign requests safely and idempotently', async () => {
+      const student = await createTestUser('student', { department: 'Software Engineering' });
+      const dean = await createTestUser('dept_dean', { department: 'Software Engineering' });
+      const logistics = await CampusLogistics.create({ student_id: student.user.id });
+
+      const [res1, res2] = await Promise.all([
+        request(`/api/v1/logistics/${logistics.id}/dean-sign/`, { method: 'POST', token: dean.token }),
+        request(`/api/v1/logistics/${logistics.id}/dean-sign/`, { method: 'POST', token: dean.token }),
+      ]);
+
+      assert.equal(res1.status, 200);
+      assert.equal(res2.status, 200);
+      assert.equal(res1.body.dean_approved, true);
+      assert.equal(res2.body.dean_approved, true);
+      assert.equal(res1.body.dean_signature_hash, res2.body.dean_signature_hash);
     });
 
     it('allows administrator to sign clearance regardless of department', async () => {
@@ -181,7 +223,7 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
   });
 
   // =========================================================================
-  // 2. Dorm Assignment and Key Issuance Authorization
+  // 2. Dorm Assignment and Key Management
   // =========================================================================
   describe('Dorm assignment and key management', () => {
     it('rejects student attempting to assign dorm with 403', async () => {
@@ -195,24 +237,37 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
       assert.equal(res.status, 403);
     });
 
-    it('rejects student attempting to return key with 403', async () => {
+    it('rejects generic staff attempting to assign dorm with 403', async () => {
+      const staff = await createTestUser('staff', { is_staff: true });
       const student = await createTestUser('student');
-      const logistics = await CampusLogistics.create({ student_id: student.user.id, key_issued: true });
-      const res = await request(`/api/v1/logistics/${logistics.id}/return-key/`, {
+      const logistics = await CampusLogistics.create({ student_id: student.user.id });
+      const res = await request(`/api/v1/logistics/${logistics.id}/assign-dorm/`, {
         method: 'POST',
-        token: student.token,
+        token: staff.token,
+        body: { dorm_block: 'Block C', dorm_room: '301', dorm_bed_number: 'Bed 1' },
       });
       assert.equal(res.status, 403);
     });
 
-    it('allows dorm staff to assign dorm and issue key with 200', async () => {
+    it('rejects generic staff attempting to return key with 403', async () => {
+      const staff = await createTestUser('staff', { is_staff: true });
       const student = await createTestUser('student');
-      const dormStaff = await createTestUser('dorm_staff');
+      const logistics = await CampusLogistics.create({ student_id: student.user.id, key_issued: true });
+      const res = await request(`/api/v1/logistics/${logistics.id}/return-key/`, {
+        method: 'POST',
+        token: staff.token,
+      });
+      assert.equal(res.status, 403);
+    });
+
+    it('allows dorm_admin to assign dorm and issue key with 200', async () => {
+      const student = await createTestUser('student');
+      const dormAdmin = await createTestUser('dorm_admin');
       const logistics = await CampusLogistics.create({ student_id: student.user.id });
 
       const res = await request(`/api/v1/logistics/${logistics.id}/assign-dorm/`, {
         method: 'POST',
-        token: dormStaff.token,
+        token: dormAdmin.token,
         body: { dorm_block: 'Block B', dorm_room: '205', dorm_bed_number: 'Bed 2', issue_key: true },
       });
       assert.equal(res.status, 200);
@@ -224,12 +279,12 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
       const reloaded = await CampusLogistics.findByPk(logistics.id);
       assert.equal(reloaded.dorm_status, 'KEY_ISSUED');
       assert.equal(reloaded.key_issued, true);
-      assert.equal(reloaded.key_issued_by_id, dormStaff.user.id);
+      assert.equal(reloaded.key_issued_by_id, dormAdmin.user.id);
     });
 
-    it('allows dorm staff to process key return with 200', async () => {
+    it('allows dorm_admin to process key return with 200', async () => {
       const student = await createTestUser('student');
-      const dormStaff = await createTestUser('dorm');
+      const dormAdmin = await createTestUser('dorm_admin');
       const logistics = await CampusLogistics.create({
         student_id: student.user.id,
         key_issued: true,
@@ -238,7 +293,7 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
 
       const res = await request(`/api/v1/logistics/${logistics.id}/return-key/`, {
         method: 'POST',
-        token: dormStaff.token,
+        token: dormAdmin.token,
       });
       assert.equal(res.status, 200);
       assert.equal(res.body.dorm_status, 'RETURNED');
@@ -254,12 +309,14 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
   // 3. Project Team Object-Level Access Control
   // =========================================================================
   describe('Project team membership and object-level access control', () => {
-    let studentA, studentB, advisor1, advisor2, admin;
+    let studentA, studentB, studentWithoutProfile, inactiveStudent, advisor1, advisor2, admin;
     let team1, team2;
 
     before(async () => {
       studentA = await createTestUser('student');
       studentB = await createTestUser('student');
+      studentWithoutProfile = await createTestUser('student', { withProfile: false });
+      inactiveStudent = await createTestUser('student', { is_active: false });
       advisor1 = await createTestUser('advisor');
       advisor2 = await createTestUser('advisor');
       admin = await createTestUser('admin');
@@ -269,6 +326,7 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
         project_title: 'Security Hardening System',
         assigned_advisor_id: advisor1.user.id,
         srs_status: 'DRAFT',
+        srs_document: `srs_docs/${dummySrsFileName}`,
       });
       await TeamMember.create({
         team_id: team1.id,
@@ -289,6 +347,24 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
         assigned_role: 'Frontend Lead',
         is_leader: true,
       });
+    });
+
+    it('returns 404 for invalid, non-UUID team IDs without database error', async () => {
+      const res = await request('/api/v1/projects/teams/not-a-valid-uuid/', { token: studentA.token });
+      assert.equal(res.status, 404);
+      assert.match(res.body.detail, /team not found/i);
+    });
+
+    it('rejects student without a StudentProfile with 403', async () => {
+      const res = await request(`/api/v1/projects/teams/${team1.id}/`, { token: studentWithoutProfile.token });
+      assert.equal(res.status, 403);
+      assert.match(res.body.detail, /student profile not found/i);
+    });
+
+    it('rejects inactive or disabled student account with 403', async () => {
+      const res = await request(`/api/v1/projects/teams/${team1.id}/`, { token: inactiveStudent.token });
+      assert.equal(res.status, 403);
+      assert.match(res.body.detail, /inactive/i);
     });
 
     it('scopes team listing (GET /api/v1/projects/teams/) so students only see their own teams', async () => {
@@ -389,6 +465,18 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
       const reloaded = await ProjectTeam.findByPk(team1.id);
       assert.equal(reloaded.srs_status, 'APPROVED');
     });
+
+    it('forbids non-member student from downloading team SRS document with 403', async () => {
+      const res = await request(`/api/v1/projects/teams/${team1.id}/srs/document/`, { token: studentB.token });
+      assert.equal(res.status, 403);
+      assert.match(res.body.detail, /do not have permission/i);
+    });
+
+    it('allows authorized team member to download team SRS document with 200', async () => {
+      const res = await request(`/api/v1/projects/teams/${team1.id}/srs/document/`, { token: studentA.token });
+      assert.equal(res.status, 200);
+      assert.ok(res.text.includes('%PDF-1.4'));
+    });
   });
 
   // =========================================================================
@@ -401,10 +489,30 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
       assert.equal(res.status, 403);
     });
 
+    it('forbids generic staff from viewing global meal cards list with 403', async () => {
+      const staff = await createTestUser('staff', { is_staff: true });
+      const res = await request('/api/v1/logistics/meal-cards/', { token: staff.token });
+      assert.equal(res.status, 403);
+    });
+
+    it('allows student_union to view global meal cards list with 200', async () => {
+      const union = await createTestUser('student_union');
+      const res = await request('/api/v1/logistics/meal-cards/', { token: union.token });
+      assert.equal(res.status, 200);
+      assert.ok(Array.isArray(res.body));
+    });
+
     it('forbids student from viewing dorm rooms status list with 403', async () => {
       const student = await createTestUser('student');
       const res = await request('/api/v1/logistics/dorm-rooms/', { token: student.token });
       assert.equal(res.status, 403);
+    });
+
+    it('allows dorm_admin to view dorm rooms status list with 200', async () => {
+      const dormAdmin = await createTestUser('dorm_admin');
+      const res = await request('/api/v1/logistics/dorm-rooms/', { token: dormAdmin.token });
+      assert.equal(res.status, 200);
+      assert.ok(res.body.rooms);
     });
 
     it('forbids student A from retrieving student B logistics record by ID with 403', async () => {
@@ -447,35 +555,101 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
       assert.equal(res.status, 403);
     });
 
+    it('forbids generic staff from viewing dorm forwarded letters with 403', async () => {
+      const staff = await createTestUser('staff', { is_staff: true });
+      const res = await request('/api/v1/uil-profiles/dorm/forwarded-letters/', { token: staff.token });
+      assert.equal(res.status, 403);
+    });
+
+    it('allows dorm_admin to view dorm forwarded letters with 200', async () => {
+      const dormAdmin = await createTestUser('dorm_admin');
+      const res = await request('/api/v1/uil-profiles/dorm/forwarded-letters/', { token: dormAdmin.token });
+      assert.equal(res.status, 200);
+      assert.ok(Array.isArray(res.body));
+    });
+
     it('forbids student from viewing student-dean forwarded letters with 403', async () => {
       const student = await createTestUser('student');
       const res = await request('/api/v1/uil-profiles/student-dean/forwarded-letters/', { token: student.token });
       assert.equal(res.status, 403);
     });
 
-    it('forbids student from downloading department score roster excel with 403', async () => {
-      const student = await createTestUser('student');
-      const res = await request('/api/v1/uil/departments/roster-excel/', { token: student.token });
-      assert.equal(res.status, 403);
+    it('allows student_union to view student-dean forwarded letters with 200', async () => {
+      const union = await createTestUser('student_union');
+      const res = await request('/api/v1/uil-profiles/student-dean/forwarded-letters/', { token: union.token });
+      assert.equal(res.status, 200);
+      assert.ok(Array.isArray(res.body));
     });
 
-    it('allows dean or admin to download department score roster excel', async () => {
-      const dean = await createTestUser('dean');
-      const res = await request('/api/v1/uil/departments/roster-excel/', { token: dean.token });
-      assert.equal(res.status, 200);
-      assert.equal(res.headers.get('content-type'), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    it('forbids student from downloading department score roster excel with 403 across all routes', async () => {
+      const student = await createTestUser('student');
+      const res1 = await request('/api/v1/uil/departments/roster-excel/', { token: student.token });
+      const res2 = await request('/api/v1/uil/export-excel/', { token: student.token });
+      const res3 = await request('/api/v1/uil/roster-excel/', { token: student.token });
+      assert.equal(res1.status, 403);
+      assert.equal(res2.status, 403);
+      assert.equal(res3.status, 403);
+    });
+
+    it('allows dept_dean or uil_officer to download department score roster excel', async () => {
+      const dean = await createTestUser('dept_dean');
+      const uil = await createTestUser('uil_officer');
+      const resDean = await request('/api/v1/uil/departments/roster-excel/', { token: dean.token });
+      const resUil = await request('/api/v1/uil/export-excel/', { token: uil.token });
+      assert.equal(resDean.status, 200);
+      assert.equal(resUil.status, 200);
+      assert.equal(resDean.headers.get('content-type'), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      assert.equal(resUil.headers.get('content-type'), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     });
   });
 
   // =========================================================================
-  // 6. Email Verification Token Validation and Anti-Reuse
+  // 6. Email Verification Token Validation, Expiration, Concurrency, and Anti-Reuse
   // =========================================================================
-  describe('Email verification token validation and anti-reuse', () => {
+  describe('Email verification token validation, expiration, concurrency, and anti-reuse', () => {
     it('rejects tampered or malformed email verification tokens with 400', async () => {
       const unverified = await createTestUser('student', { is_email_verified: false, is_active: false });
       const res = await request(`/api/auth/verify-email/${unverified.user.id}/tampered-token-value/`);
       assert.equal(res.status, 400);
       assert.match(res.body.detail, /invalid/i);
+    });
+
+    it('rejects token when route identifier does not match token subject with 400', async () => {
+      const userA = await createTestUser('student', { is_email_verified: false, is_active: false });
+      const userB = await createTestUser('student', { is_email_verified: false, is_active: false });
+      const tokenA = generateEmailVerificationToken(userA.user);
+
+      const res = await request(`/api/auth/verify-email/${userB.user.id}/${tokenA}/`);
+      assert.equal(res.status, 400);
+      assert.match(res.body.detail, /does not match|invalid/i);
+    });
+
+    it('rejects expired email verification token with 400', async () => {
+      const unverified = await createTestUser('student', { is_email_verified: false, is_active: false });
+      const secret = getEmailVerificationSecret();
+      const expiredToken = jwt.sign({
+        token_type: 'email_verification',
+        sub: unverified.user.id,
+        email: unverified.user.email,
+        state: getEmailVerificationStateHash(unverified.user),
+      }, secret, { algorithm: 'HS256', expiresIn: '-5s' });
+
+      const res = await request(`/api/auth/verify-email/${unverified.user.id}/${expiredToken}/`);
+      assert.equal(res.status, 400);
+      assert.match(res.body.detail, /expired/i);
+    });
+
+    it('invalidates verification token if user email changes after issuance with 400', async () => {
+      const unverified = await createTestUser('student', { is_email_verified: false, is_active: false });
+      const token = generateEmailVerificationToken(unverified.user);
+
+      // Mutate user email in database
+      unverified.user.email = `mutated-${crypto.randomUUID().slice(0, 6)}@example.test`;
+      await unverified.user.save();
+
+      const res = await request(`/api/auth/verify-email/${unverified.user.id}/${token}/`);
+      assert.equal(res.status, 400);
+      assert.match(res.body.detail, /invalid|changed|already been used/i);
     });
 
     it('verifies unverified user with valid cryptographic token with 200', async () => {
@@ -504,10 +678,32 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
       assert.equal(replayRes.status, 400);
       assert.match(replayRes.body.detail, /already been verified|already been used/i);
     });
+
+    it('handles concurrent email verification replay attempts safely (exactly one succeeds)', async () => {
+      const unverified = await createTestUser('student', { is_email_verified: false, is_active: false });
+      const token = generateEmailVerificationToken(unverified.user);
+
+      const [res1, res2] = await Promise.all([
+        request(`/api/auth/verify-email/${unverified.user.id}/${token}/`),
+        request(`/api/auth/verify-email/${unverified.user.id}/${token}/`),
+      ]);
+
+      const statuses = [res1.status, res2.status].sort();
+      assert.deepEqual(statuses, [200, 400]);
+
+      const successRes = res1.status === 200 ? res1 : res2;
+      const failureRes = res1.status === 400 ? res1 : res2;
+      assert.match(successRes.body.message, /verified successfully/i);
+      assert.match(failureRes.body.detail, /already been verified|already been used/i);
+
+      const reloaded = await User.findByPk(unverified.user.id);
+      assert.equal(reloaded.is_email_verified, true);
+      assert.equal(reloaded.is_active, true);
+    });
   });
 
   // =========================================================================
-  // 7. Weekly Logbook Mass-Assignment Protection
+  // 7. Weekly Logbook Mass-Assignment & Profile Protection
   // =========================================================================
   describe('Weekly logbook mass-assignment protection (POST /api/v1/projects/logbooks/)', () => {
     let student, team, advisor;
@@ -527,6 +723,21 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
       });
     });
 
+    it('forbids submitting a logbook if student has no StudentProfile with 403', async () => {
+      const noProfileStudent = await createTestUser('student', { withProfile: false });
+      const res = await request('/api/v1/projects/logbooks/', {
+        method: 'POST',
+        token: noProfileStudent.token,
+        body: {
+          project_team_id: team.id,
+          week_number: 1,
+          tasks_executed: 'Trying without profile',
+        },
+      });
+      assert.equal(res.status, 403);
+      assert.match(res.body.detail, /student profile not found/i);
+    });
+
     it('forbids submitting a logbook for a team the student is not a member of with 403', async () => {
       const outsider = await createTestUser('student');
       const res = await request('/api/v1/projects/logbooks/', {
@@ -542,7 +753,7 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
       assert.match(res.body.detail, /not a member of the specified project team/i);
     });
 
-    it('neutralizes mass-assignment: ignores advisor_approved, advisor_feedback, and forged advisor ID', async () => {
+    it('neutralizes mass-assignment across all protected logbook fields', async () => {
       const forgedAdvisorId = crypto.randomUUID();
       const maliciousPayload = {
         project_team_id: team.id,
@@ -556,6 +767,7 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
         advisor_feedback: 'FORGED: Excellent work, highest marks!',
         similarity_score: 0.99,
         is_flagged: true,
+        matched_snippet: 'FORGED PLAGIARISM BYPASS',
         academic_advisor_id: forgedAdvisorId,
       };
 
@@ -579,6 +791,8 @@ describe('Task 1.19 Phase 2A security authorization integration', () => {
       assert.equal(persisted.academic_advisor_id, advisor.user.id);
       assert.equal(persisted.student_id, student.user.id);
       assert.equal(persisted.week_number, 3);
+      assert.notEqual(persisted.matched_snippet, 'FORGED PLAGIARISM BYPASS');
+      assert.equal(persisted.status, 'SUBMITTED');
     });
   });
 });

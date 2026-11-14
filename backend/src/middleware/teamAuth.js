@@ -1,4 +1,4 @@
-import { ProjectTeam, TeamMember } from '../models/index.js';
+import { ProjectTeam, TeamMember, StudentProfile } from '../models/index.js';
 
 /**
  * Reusable object-level authorization for project team resources.
@@ -14,6 +14,11 @@ export async function verifyTeamAccess(teamId, user, options = {}) {
     return { status: 401, detail: 'Authentication required.', team: null };
   }
 
+  // Inactive or disabled accounts are unconditionally barred from team access
+  if (!user.is_active) {
+    return { status: 403, detail: 'User account is inactive or disabled.', team: null };
+  }
+
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!isUUID.test(String(teamId))) {
     return { status: 404, detail: 'Team not found.', team: null };
@@ -24,9 +29,20 @@ export async function verifyTeamAccess(teamId, user, options = {}) {
     return { status: 404, detail: 'Team not found.', team: null };
   }
 
-  const isSuper = Boolean(user.is_superuser || user.is_staff);
   const userRole = (user.role || '').toLowerCase();
-  const isAdmin = userRole === 'admin' || isSuper;
+  const isAdmin = userRole === 'admin' || Boolean(user.is_superuser);
+
+  // If caller is a student, verify that an active student profile exists
+  if (userRole === 'student') {
+    const profile = await StudentProfile.findOne({ where: { user_id: user.id } });
+    if (!profile) {
+      return {
+        status: 403,
+        detail: 'Student profile not found. Please complete profile registration before accessing project teams.',
+        team: null,
+      };
+    }
+  }
 
   // Check if assigned advisor
   const isAdvisor = Boolean(team.assigned_advisor_id && String(team.assigned_advisor_id) === String(user.id));

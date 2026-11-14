@@ -6,6 +6,7 @@ import { CampusLogistics, User } from '../models/index.js';
 import { requireAuth, requireRole, requireDean, requireDormStaff, requireStudentUnion } from '../middleware/auth.js';
 import { generateSignedQR, verifyPayload } from '../services/qrGenerator.js';
 import { withTransaction } from '../utils/transactions.js';
+import { JWT_SECRET } from '../config/env.js';
 
 const router = express.Router();
 
@@ -115,7 +116,7 @@ router.get('/meal-cards/', requireAuth, requireStudentUnion, async (req, res) =>
 // -------------------------------------------------------------
 // POST /v1/logistics/:id/activate-meal-card/
 // -------------------------------------------------------------
-router.post('/:id/activate-meal-card/', requireAuth, requireRole('admin', 'student_union', 'dean', 'uil', 'staff'), async (req, res) => {
+router.post('/:id/activate-meal-card/', requireAuth, requireRole('admin', 'student_union'), async (req, res) => {
   try {
     const item = await CampusLogistics.findByPk(req.params.id);
     if (!item) return res.status(404).json({ detail: 'Logistics record not found.' });
@@ -125,14 +126,14 @@ router.post('/:id/activate-meal-card/', requireAuth, requireRole('admin', 'stude
     item.meal_card_active = true;
     item.meal_card_issued_at = new Date();
     item.meal_card_issued_by_id = req.user.id;
-    item.meal_card_issued_by_name = req.user.getFullName();
+    item.meal_card_issued_by_name = req.user.getFullName ? req.user.getFullName() : `${req.user.first_name || ''} ${req.user.last_name || ''}`.trim();
 
     // Generate cryptographically signed Student Union Verification QR code
     const payload = {
       logistics_id: item.id,
       student_id: item.student_id,
       meal_card: item.meal_card_number,
-      verified_by: req.user.getFullName(),
+      verified_by: item.meal_card_issued_by_name,
       issued_at: item.meal_card_issued_at.toISOString(),
     };
     const { qrImage, signature } = await generateSignedQR(payload);
@@ -289,7 +290,7 @@ router.post('/:id/return-key/', requireAuth, requireDormStaff, async (req, res) 
 router.post('/:id/dean-sign/', requireAuth, requireDean, async (req, res) => {
   try {
     const userRole = (req.user.role || '').toLowerCase();
-    const isSuper = Boolean(req.user.is_superuser || req.user.is_staff);
+    const isSuper = Boolean(req.user.is_superuser);
 
     const result = await withTransaction(async (transaction) => {
       const record = await CampusLogistics.findByPk(req.params.id, {
@@ -300,6 +301,11 @@ router.post('/:id/dean-sign/', requireAuth, requireDean, async (req, res) => {
         return { notFound: true };
       }
 
+      // Idempotency: if already approved, safely return without re-signing or overwriting audit trail
+      if (record.dean_approved) {
+        return { record };
+      }
+
       // Check academic jurisdiction / department boundary if dean specifies department
       if (userRole !== 'admin' && !isSuper && req.user.department) {
         const student = await User.findByPk(record.student_id, { transaction });
@@ -308,14 +314,16 @@ router.post('/:id/dean-sign/', requireAuth, requireDean, async (req, res) => {
         }
       }
 
+      const signedAt = new Date();
       record.dean_approved = true;
       record.dean_signed_by_id = req.user.id;
-      record.dean_signed_by_name = req.user.getFullName();
-      record.dean_signed_at = new Date();
+      record.dean_signed_by_name = req.user.getFullName ? req.user.getFullName() : `${req.user.first_name || ''} ${req.user.last_name || ''}`.trim();
+      record.dean_signed_at = signedAt;
       record.signature_verified = true;
 
-      const signaturePayload = `${record.id}-${record.student_id}-${req.user.id}-${record.dean_signed_at.toISOString()}`;
-      record.dean_signature_hash = crypto.createHash('sha256').update(signaturePayload).digest('hex');
+      // Keyed HMAC-SHA256 institutional audit fingerprint (tamper-evident audit digest)
+      const auditPayload = `${record.id}:${record.student_id}:${req.user.id}:${signedAt.toISOString()}`;
+      record.dean_signature_hash = crypto.createHmac('sha256', JWT_SECRET).update(auditPayload).digest('hex');
 
       await record.save({ transaction });
       return { record };
@@ -379,8 +387,8 @@ router.get('/:id/', requireAuth, async (req, res) => {
 
     const isOwner = String(item.student_id) === String(req.user.id);
     const userRole = (req.user.role || '').toLowerCase();
-    const isPrivileged = ['admin', 'dean', 'dept_dean', 'student_union', 'union', 'dorm_admin', 'dorm', 'dorm_staff', 'proctor', 'uil', 'uil_officer', 'staff'].includes(userRole)
-      || Boolean(req.user.is_superuser || req.user.is_staff);
+    const isPrivileged = ['admin', 'dean', 'dept_dean', 'student_union', 'dorm_admin', 'uil', 'uil_officer'].includes(userRole)
+      || Boolean(req.user.is_superuser);
 
     if (!isOwner && !isPrivileged) {
       return res.status(403).json({ detail: 'You do not have permission to access this logistics record.' });

@@ -9,7 +9,7 @@ const router = express.Router();
 // -------------------------------------------------------------
 // GET /v1/uil-profiles/dorm/forwarded-letters/
 // -------------------------------------------------------------
-router.get('/dorm/forwarded-letters/', requireAuth, requireRole('admin', 'dean', 'dept_dean', 'dorm_admin', 'dorm', 'proctor', 'uil', 'uil_officer', 'staff'), async (req, res) => {
+router.get('/dorm/forwarded-letters/', requireAuth, requireRole('admin', 'dean', 'dept_dean', 'dorm_admin', 'uil', 'uil_officer'), async (req, res) => {
   try {
     const items = await CampusLogistics.findAll({
       where: { dean_approved: true }
@@ -45,7 +45,7 @@ router.get('/dorm/forwarded-letters/', requireAuth, requireRole('admin', 'dean',
 // -------------------------------------------------------------
 // GET /v1/uil-profiles/student-dean/forwarded-letters/
 // -------------------------------------------------------------
-router.get('/student-dean/forwarded-letters/', requireAuth, requireRole('admin', 'dean', 'dept_dean', 'student_union', 'union', 'uil', 'uil_officer', 'staff'), async (req, res) => {
+router.get('/student-dean/forwarded-letters/', requireAuth, requireRole('admin', 'dean', 'dept_dean', 'student_union', 'uil', 'uil_officer'), async (req, res) => {
   try {
     const items = await CampusLogistics.findAll({
       where: { dean_approved: true }

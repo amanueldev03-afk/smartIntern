@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { Op } from 'sequelize';
 import { User, StudentProfile } from '../models/index.js';
-import { JWT_SECRET, JWT_ACCESS_EXPIRATION, JWT_REFRESH_EXPIRATION } from '../config/env.js';
+import { JWT_SECRET, JWT_ACCESS_EXPIRATION, JWT_REFRESH_EXPIRATION, EMAIL_VERIFICATION_SECRET } from '../config/env.js';
 import { withTransaction } from '../utils/transactions.js';
 
 export const hashPassword = async (password) => {
@@ -68,21 +68,40 @@ export const verifyToken = (token) => {
   return jwt.verify(token, JWT_SECRET);
 };
 
+export const getEmailVerificationSecret = () => {
+  const secret = process.env.EMAIL_VERIFICATION_SECRET || EMAIL_VERIFICATION_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      const err = new Error('Email verification secret is not securely configured.');
+      err.status = 500;
+      throw err;
+    }
+    return 'smartintern-email-verification-secret-dev';
+  }
+  if (process.env.NODE_ENV === 'production' && (secret === 'smartintern-secret-key-development' || secret === 'smartintern-email-verification-secret-dev')) {
+    const err = new Error('Insecure development verification secret cannot be used in production.');
+    err.status = 500;
+    throw err;
+  }
+  return secret;
+};
+
 export const getEmailVerificationStateHash = (user) => {
   return crypto.createHash('sha256')
-    .update(`${user.id}:${user.password}:${user.is_email_verified}:${user.is_active}`)
+    .update(`${user.id}:${(user.email || '').toLowerCase()}:${user.password}:${user.is_email_verified}:${user.is_active}`)
     .digest('hex')
     .slice(0, 16);
 };
 
 export const generateEmailVerificationToken = (user, expiresIn = '24h') => {
+  const secret = getEmailVerificationSecret();
   const payload = {
     token_type: 'email_verification',
     sub: user.id,
-    email: user.email,
+    email: (user.email || '').toLowerCase(),
     state: getEmailVerificationStateHash(user),
   };
-  return jwt.sign(payload, JWT_SECRET, { expiresIn });
+  return jwt.sign(payload, secret, { algorithm: 'HS256', expiresIn });
 };
 
 export const verifyEmailVerificationToken = async (uid, token) => {
@@ -90,9 +109,11 @@ export const verifyEmailVerificationToken = async (uid, token) => {
     throw { status: 400, message: 'Verification token and identifier are required.' };
   }
 
+  const secret = getEmailVerificationSecret();
+
   let decoded;
   try {
-    decoded = jwt.verify(token, JWT_SECRET);
+    decoded = jwt.verify(token, secret, { algorithms: ['HS256'] });
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
       throw { status: 400, message: 'Email verification token has expired.' };
@@ -120,33 +141,44 @@ export const verifyEmailVerificationToken = async (uid, token) => {
     throw { status: 400, message: 'Email verification token is invalid or does not match the specified user.' };
   }
 
-  const user = await User.findByPk(resolvedId);
-  if (!user) {
-    throw { status: 400, message: 'Email verification token is invalid or user not found.' };
-  }
+  // Atomically verify and activate user under row-level update lock
+  return await withTransaction(async (transaction) => {
+    const user = await User.findByPk(resolvedId, {
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+    if (!user) {
+      throw { status: 400, message: 'Email verification token is invalid or user not found.' };
+    }
 
-  if (user.is_email_verified) {
-    throw { status: 400, message: 'Email has already been verified.' };
-  }
+    if (user.is_email_verified) {
+      throw { status: 400, message: 'Email has already been verified.' };
+    }
 
-  const expectedState = getEmailVerificationStateHash(user);
-  if (decoded.state !== expectedState) {
-    throw { status: 400, message: 'Email verification token is invalid or has already been used.' };
-  }
+    // Invalidate token if user email was changed after token generation
+    if (decoded.email && decoded.email.toLowerCase() !== (user.email || '').toLowerCase()) {
+      throw { status: 400, message: 'Email verification token is invalid or email has changed.' };
+    }
 
-  user.is_email_verified = true;
-  user.is_active = true;
-  await user.save();
+    const expectedState = getEmailVerificationStateHash(user);
+    if (decoded.state !== expectedState) {
+      throw { status: 400, message: 'Email verification token is invalid or has already been used.' };
+    }
 
-  return {
-    message: 'Email verified successfully. You can now log in.',
-    user: {
-      id: user.id,
-      email: user.email,
-      username: user.username,
-      role: (user.role || 'student').toLowerCase(),
-    },
-  };
+    user.is_email_verified = true;
+    user.is_active = true;
+    await user.save({ transaction });
+
+    return {
+      message: 'Email verified successfully. You can now log in.',
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: (user.role || 'student').toLowerCase(),
+      },
+    };
+  });
 };
 
 export const authenticateUser = async (identifier, password) => {
